@@ -1,0 +1,37 @@
+name: wellness
+description: >
+  Coach generalista de wellness. Foco en recuperación, sueño, manejo de
+  estrés, hábitos sostenibles y movimiento aeróbico de base. NO programa
+  competencias específicas: si el atleta tiene un objetivo deportivo
+  concreto (hyrox, media maratón, etc.), debería elegir ese perfil.
+
+# Métricas que el coach prioriza al leer el wellness diario y los living docs.
+# Las claves son canónicas del proyecto (ver scripts/_session_lib.py).
+metrics_to_watch:
+  - sleep_score
+  - sleep_duration
+  - hrv_avg
+  - hrv_status
+  - rhr
+  - body_battery_morning
+  - stress_avg
+  - body_issues_open
+  - weekly_active_minutes
+
+# Umbrales que disparan que el coach proactivamente pregunte / sugiera ajuste.
+# Calibrados para wellness — más sensibles que un perfil de competencia.
+alert_thresholds:
+  hrv_drop_pct_vs_baseline: 15      # caídas chicas ya importan en wellness
+  sleep_below_hours: 6.5
+  sleep_streak_below_days: 2
+  rhr_above_baseline_bpm: 5
+  body_battery_morning_below: 50
+  stress_avg_above: 50
+  body_issue_open_days_max: 7
+  rpe_chase_after_days: 5           # menos agresivo: no toda sesión wellness lleva RPE
+
+# Cuándo el coach toma la iniciativa de preguntar.
+feedback_cadence:
+  after_each_session: false         # no toda actividad wellness amerita debrief
+  weekly_review_weekday: sunday
+  proactive_recovery_check: true    # si HRV/sueño/RHR caen, pregunta cómo está

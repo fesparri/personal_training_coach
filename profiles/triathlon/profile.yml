@@ -1,0 +1,35 @@
+name: triathlon
+description: >
+  Coach para triatlón (sprint / olímpico / 70.3 / Ironman). Foco en
+  3 disciplinas (nado / bici / run), transiciones, ladrillos
+  (brick workouts) y manejo de carga total. Stub mínimo — extendelo
+  con tu plan y distancias específicas.
+
+metrics_to_watch:
+  - sleep_score
+  - hrv_avg
+  - hrv_status
+  - rhr
+  - body_battery_morning
+  - body_issues_open
+  - weekly_volume_swim
+  - weekly_volume_cycling
+  - weekly_volume_run
+  - hr_zones_distribution_z1_z5
+  - acwr
+  - rpe_recent
+
+alert_thresholds:
+  hrv_drop_pct_vs_baseline: 20
+  sleep_below_hours: 6.5
+  sleep_streak_below_days: 2
+  rhr_above_baseline_bpm: 6
+  body_battery_morning_below: 40
+  acwr_above: 1.5
+  body_issue_open_days_max: 5
+  rpe_chase_after_days: 3
+
+feedback_cadence:
+  after_each_session: true
+  weekly_review_weekday: sunday
+  proactive_recovery_check: true

@@ -1,0 +1,42 @@
+# =============================================================================
+# Personal Coach — perfil del atleta y configuración
+# =============================================================================
+# Copiá este archivo a `profile.yml` (en el root del proyecto) y completalo
+# con tus datos. `profile.yml` está gitignored: tus datos personales nunca
+# se suben al repo.
+
+# Perfil de coaching activo. Uno de:
+#   wellness, hyrox, half_marathon, triathlon, hypertrophy
+# Lo podés cambiar en cualquier momento — la historia (data/, executed_volume.md,
+# plan_adjustments.md) se preserva.
+coach_profile: wellness
+
+# Datos del atleta. El system_prompt del perfil activo los lee y los
+# inyecta en el contexto del coach.
+athlete:
+  name: ""
+  birth_year: null               # opcional, para calcular FCmax estimada (220-edad)
+  weight_kg: null                # opcional
+  height_cm: null                # opcional
+
+# Métricas fisiológicas. LTHR es la más importante — se usa para calcular
+# zonas Z1-Z5 y para clasificar la intensidad de cada sesión.
+physio:
+  lthr_bpm: 172                  # lactate threshold heart rate
+  z2_ceiling_bpm: 135            # tope de Z2 (default = ~78% LTHR)
+  resting_hr_typical_bpm: null   # FC reposo típica, opcional
+  hrv_baseline_ms: null          # HRV avg típico, opcional
+
+# Dispositivos (informativo, lo lee el coach para contexto)
+devices:
+  - "Garmin <modelo>"
+
+# Restricciones / molestias activas iniciales (después se gestionan en
+# executed_volume.md → Bitácora corporal). Vacío al arrancar.
+initial_body_state: []
+# Ejemplo:
+# initial_body_state:
+#   - parte: "hombro izq"
+#     severidad: 4
+#     estado: open
+#     notas: "fatiga post-kinesio, RIR>=3 en empujes"

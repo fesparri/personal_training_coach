@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-coach"
+version = "0.1.0"
+description = "Personal data-driven coach for wellness and sport-specific training, powered by Garmin Connect data."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+keywords = ["garmin", "training", "wellness", "hyrox", "coaching", "fit"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "garminconnect==0.3.3",
+    "fitparse==1.2.0",
+    "python-dotenv==1.0.1",
+    "pyyaml>=6.0",
+]
+
+[tool.setuptools]
+# Scripts live under scripts/ and are run directly with `python scripts/<name>.py`.
+# No installable package layout for now.
+packages = []

@@ -1,0 +1,33 @@
+name: hypertrophy
+description: >
+  Coach para hipertrofia general (ganancia de masa muscular). Foco en
+  volumen progresivo por grupo muscular, manejo de RIR, frecuencia
+  semanal por grupo, y deload. Stub mínimo — extendelo con tu split y
+  preferencias propias.
+
+metrics_to_watch:
+  - sleep_score
+  - sleep_duration
+  - hrv_avg
+  - rhr
+  - body_battery_morning
+  - body_issues_open
+  - weekly_volume_strength
+  - weekly_sets_per_muscle_group     # se computa offline
+  - rpe_recent
+  - rir_recent                       # cuán cerca de fallo
+  - bodyweight_kg                    # tracking opcional
+
+alert_thresholds:
+  hrv_drop_pct_vs_baseline: 25       # hipertrofia tolera bajadas más
+  sleep_below_hours: 7.0             # sleep es load-bearing en hipertrofia
+  sleep_streak_below_days: 2
+  rhr_above_baseline_bpm: 8
+  body_battery_morning_below: 35
+  body_issue_open_days_max: 5
+  rpe_chase_after_days: 2            # cada sesión cuenta para volumen
+
+feedback_cadence:
+  after_each_session: true
+  weekly_review_weekday: sunday
+  proactive_recovery_check: true

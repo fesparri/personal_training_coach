@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Personal Coach — Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-card: #161b22;
+    --bg-card-2: #1f242c;
+    --bg-card-3: #262d36;
+    --border: #30363d;
+    --border-soft: #21262d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-faint: #6e7681;
+    --accent: #58a6ff;
+    --accent-2: #79c0ff;
+    --ok: #3fb950;
+    --ok-bg: rgba(63,185,80,0.12);
+    --warn: #d29922;
+    --warn-bg: rgba(210,153,34,0.12);
+    --danger: #f85149;
+    --danger-bg: rgba(248,81,73,0.12);
+    --info: #a371f7;
+    --info-bg: rgba(163,113,247,0.12);
+    --grid: #21262d;
+    --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 32px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  /* === Typography === */
+  h1, h2, h3, h4 { margin: 0; font-weight: 600; }
+  h1 { font-size: 24px; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.08em; margin: 32px 0 12px; font-weight: 600;
+  }
+  h2:first-of-type { margin-top: 16px; }
+  h3 { font-size: 13px; color: var(--text-dim); margin-bottom: 10px; font-weight: 500; }
+  h4 { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .meta { color: var(--text-dim); font-size: 12px; }
+  .empty { color: var(--text-faint); font-style: italic; padding: 12px 0; font-size: 13px; }
+  code { background: var(--bg-card-2); padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+  small { color: var(--text-dim); font-size: 11px; }
+
+  /* === Header === */
+  .header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 8px;
+  }
+  .header .left h1 { display: flex; align-items: baseline; gap: 12px; }
+  .header .athlete-name { font-size: 14px; color: var(--text-dim); font-weight: 400; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    background: var(--accent); color: var(--bg);
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .header .right { text-align: right; }
+
+  /* === Grid layouts === */
+  .grid { display: grid; gap: 12px; }
+  .grid-hero { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .grid-cards-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .grid-cards-2 { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+  .grid-charts-3 { grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); }
+  .grid-charts-2 { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+
+  /* === Cards === */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .card-hero {
+    background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card-2) 100%);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .card-hero::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--text-faint); border-radius: 10px 10px 0 0;
+  }
+  .card-hero.ok::before { background: var(--ok); }
+  .card-hero.warn::before { background: var(--warn); }
+  .card-hero.danger::before { background: var(--danger); }
+  .card-hero.info::before { background: var(--info); }
+
+  .card-hero .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dim); font-weight: 600; margin-bottom: 8px;
+  }
+  .card-hero .value {
+    font-size: 38px; font-weight: 700; line-height: 1; letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .card-hero .value-unit { font-size: 14px; color: var(--text-dim); margin-left: 4px; font-weight: 400; }
+  .card-hero .sub-line {
+    font-size: 12px; color: var(--text-dim); display: flex; gap: 10px;
+    flex-wrap: wrap; align-items: center;
+  }
+  .card-hero .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .pill.danger { background: var(--danger-bg); color: var(--danger); }
+  .pill.info { background: var(--info-bg); color: var(--info); }
+  .pill.neutral { background: var(--bg-card-3); color: var(--text-dim); }
+
+  /* === Profile cards === */
+  .profile-card { padding: 16px 18px; }
+  .profile-card .pc-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dim); margin-bottom: 12px; font-weight: 600;
+  }
+  .profile-card .pc-main {
+    font-size: 28px; font-weight: 700; line-height: 1.1; margin-bottom: 6px;
+  }
+  .profile-card .pc-secondary {
+    font-size: 13px; color: var(--text-dim); margin-bottom: 10px;
+  }
+  .profile-card .pc-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px;
+    border-top: 1px solid var(--border-soft); padding-top: 10px; font-size: 12px;
+  }
+  .profile-card .pc-grid .k { color: var(--text-dim); }
+  .profile-card .pc-grid .v { color: var(--text); font-weight: 500; text-align: right; }
+  .profile-card .delta-positive { color: var(--ok); font-weight: 600; }
+  .profile-card .delta-negative { color: var(--danger); font-weight: 600; }
+
+  /* === Alert banners === */
+  .alert {
+    padding: 12px 16px; border-radius: 6px; margin-bottom: 8px;
+    border-left: 3px solid var(--warn); background: var(--warn-bg);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .alert.danger { border-left-color: var(--danger); background: var(--danger-bg); }
+  .alert.info { border-left-color: var(--info); background: var(--info-bg); }
+  .alert .level {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--warn); font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    background: var(--bg-card); white-space: nowrap;
+  }
+  .alert.danger .level { color: var(--danger); }
+  .alert.info .level { color: var(--info); }
+  .alert .msg { flex: 1; font-size: 13px; }
+
+  /* === Chart container === */
+  .chart-container {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .chart-container.large .canvas-wrap { height: 260px; }
+  .chart-container .canvas-wrap { position: relative; height: 200px; }
+  .chart-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .chart-header h3 { margin: 0; }
+  .chart-header .latest {
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .chart-header .latest .delta {
+    font-size: 11px; font-weight: 500; margin-left: 6px;
+  }
+  .delta-up { color: var(--ok); }
+  .delta-down { color: var(--danger); }
+  .delta-flat { color: var(--text-dim); }
+
+  /* === Tables === */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table th, table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
+  table th {
+    color: var(--text-dim); font-weight: 500;
+    text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em;
+  }
+  table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table tr:last-child td { border-bottom: none; }
+  table td.sev-low { color: var(--ok); font-weight: 500; }
+  table td.sev-med { color: var(--warn); font-weight: 500; }
+  table td.sev-high { color: var(--danger); font-weight: 600; }
+  .estado-open { color: var(--warn); font-weight: 500; }
+  .estado-resolved { color: var(--text-faint); }
+
+  /* === Planned session cards === */
+  .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .plan-grid { grid-template-columns: 1fr; } }
+  .plan-card {
+    background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card-2) 100%);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+    border-left: 3px solid var(--accent);
+  }
+  .plan-card.tomorrow { border-left-color: var(--info); }
+  .plan-card .pl-day {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dim); font-weight: 600; margin-bottom: 6px;
+  }
+  .plan-card .pl-title {
+    font-size: 18px; font-weight: 600; line-height: 1.3; margin-bottom: 8px;
+  }
+  .plan-card .pl-detail {
+    font-size: 13px; color: var(--text-dim); line-height: 1.5;
+  }
+  .plan-card .pl-empty { color: var(--text-faint); font-style: italic; }
+
+  /* Mini agenda (next 7 days) */
+  .agenda-list { font-size: 12px; }
+  .agenda-row {
+    display: grid; grid-template-columns: 50px 90px 1fr;
+    gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border-soft);
+  }
+  .agenda-row:last-child { border-bottom: none; }
+  .agenda-row .day { color: var(--text-dim); font-weight: 500; text-transform: uppercase; font-size: 10px; padding-top: 2px; }
+  .agenda-row .date { color: var(--text-faint); font-size: 11px; padding-top: 2px; }
+  .agenda-row .title { font-weight: 500; }
+
+  /* === Volume cards === */
+  .volume-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;
+  }
+  .vol-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .vol-card .vc-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-dim); font-weight: 600; margin-bottom: 8px;
+  }
+  .vol-card .vc-value {
+    font-size: 26px; font-weight: 700; line-height: 1;
+  }
+  .vol-card .vc-unit { font-size: 12px; color: var(--text-dim); margin-left: 4px; }
+  .vol-card .vc-delta {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 2px 6px; border-radius: 8px; margin-left: 6px;
+  }
+  .vol-card .vc-delta.up { background: var(--ok-bg); color: var(--ok); }
+  .vol-card .vc-delta.down { background: var(--danger-bg); color: var(--danger); }
+  .vol-card .vc-delta.flat { background: var(--bg-card-3); color: var(--text-dim); }
+  .vol-card .vc-sub { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+
+  .modality-bars {
+    margin-top: 8px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .mod-row {
+    display: grid; grid-template-columns: 100px 1fr 60px; gap: 8px;
+    font-size: 11px; align-items: center;
+  }
+  .mod-row .mod-name { color: var(--text-dim); }
+  .mod-row .mod-bar {
+    background: var(--bg-card-3); border-radius: 3px; height: 8px; position: relative;
+  }
+  .mod-row .mod-bar-fill {
+    background: var(--accent); border-radius: 3px; height: 100%;
+  }
+  .mod-row .mod-time { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* === Profile history audit log === */
+  .history-list { font-size: 12px; max-height: 240px; overflow-y: auto; }
+  .history-row {
+    display: grid; grid-template-columns: 100px 1fr 110px;
+    gap: 12px; padding: 6px 4px; border-bottom: 1px solid var(--border-soft);
+  }
+  .history-row:last-child { border-bottom: none; }
+  .history-row .h-date { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .history-row .h-field { font-weight: 500; }
+  .history-row .h-change { color: var(--text-faint); text-align: right; }
+  .history-row .h-change .arrow { color: var(--accent); margin: 0 4px; }
+
+  /* === Footer === */
+  .footer {
+    color: var(--text-faint); font-size: 12px; margin-top: 48px;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+
+  /* === Responsive === */
+  @media (max-width: 800px) {
+    body { padding: 16px; }
+    .header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .header .right { text-align: left; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- HEADER                                                              -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<div class="header">
+  <div class="left">
+    <h1>
+      Personal Coach
+      <span class="badge" id="profile-badge">—</span>
+      <span class="athlete-name" id="athlete-name"></span>
+    </h1>
+    <div class="meta" id="profile-desc"></div>
+  </div>
+  <div class="right">
+    <div class="meta" id="generated-at"></div>
+    <div class="meta" id="data-coverage"></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- HERO ROW — 4 métricas críticas del día                              -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Hoy — radiografía rápida <span id="current-date" style="font-weight:400; text-transform:none; color:var(--text-faint); letter-spacing:0;"></span></h2>
+<div class="grid grid-hero" id="hero-row"></div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- AGENDA — sesión planeada hoy + mañana                                -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Tu agenda — según master_plan.md</h2>
+<div class="plan-grid" id="plan-grid"></div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- VOLUMEN RECIENTE                                                    -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Tu volumen reciente</h2>
+<div class="volume-grid" id="volume-grid"></div>
+<div class="card" id="modality-breakdown-card" style="margin-top: 10px;">
+  <h3>Distribución por modalidad — últimos 7 días</h3>
+  <div class="modality-bars" id="modality-bars"></div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- ALERTAS                                                             -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Alertas activas</h2>
+<div id="alerts-section"></div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- BITÁCORA ABIERTA                                                    -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Bitácora corporal — abiertas hoy</h2>
+<div class="card" id="open-issues-card">
+  <table id="open-issues-table">
+    <thead><tr><th>Parte</th><th>Sev</th><th>Abierta desde</th><th>Notas</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- AGENDA EXTENDIDA — próximos 7 días                                   -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Próximos 7 días — vista compacta</h2>
+<div class="card">
+  <div class="agenda-list" id="agenda-list"></div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- PERFIL DEL ATLETA — snapshot longitudinal                           -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Perfil del atleta — snapshot actual</h2>
+<div class="grid grid-cards-3" id="profile-cards"></div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- HISTORIAL DE CAMBIOS DEL PERFIL                                     -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Historial de cambios del perfil <small style="font-weight:400; text-transform:none; color:var(--text-faint); letter-spacing:0;">(audit log de Garmin)</small></h2>
+<div class="card">
+  <div class="history-list" id="history-list"></div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- TENDENCIAS WELLNESS 90D                                             -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Tendencias wellness — últimos 90 días</h2>
+<div class="grid grid-charts-3">
+  <div class="chart-container">
+    <div class="chart-header"><h3>Sleep score</h3><div class="latest" id="latest-sleep_score">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-sleep-score"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Duración de sueño (h)</h3><div class="latest" id="latest-sleep_duration_h">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-sleep-duration"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>HRV avg (ms)</h3><div class="latest" id="latest-hrv_avg">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-hrv"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Resting HR (bpm)</h3><div class="latest" id="latest-rhr">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-rhr"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Body Battery (rango día)</h3><div class="latest" id="latest-bb">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-bb"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Stress avg</h3><div class="latest" id="latest-stress_avg">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-stress"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Training Readiness</h3><div class="latest" id="latest-training_readiness">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-training-readiness"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Frecuencia respiratoria</h3><div class="latest" id="latest-respiration_avg">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-respiration"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>SpO2 promedio</h3><div class="latest" id="latest-spo2_avg">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-spo2"></canvas></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- EVOLUCIÓN DE PERFORMANCE — longitudinal                             -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Evolución de performance — perfil longitudinal</h2>
+<div class="grid grid-charts-3">
+  <div class="chart-container">
+    <div class="chart-header"><h3>Fitness Age</h3><div class="latest" id="latest-fitness_age">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-fitness-age"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>VO2max</h3><div class="latest" id="latest-vo2max">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-vo2max"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Cycling FTP (W)</h3><div class="latest" id="latest-cycling_ftp_w">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-ftp-cycling"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Running FTP (W)</h3><div class="latest" id="latest-running_ftp_w">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-ftp-running"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Lactate Threshold HR (bpm)</h3><div class="latest" id="latest-running_lthr_bpm">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-lthr"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Peso (kg)</h3><div class="latest" id="latest-weight_kg">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-weight"></canvas></div>
+  </div>
+</div>
+
+<h2>Evolución de race predictions (Garmin)</h2>
+<div class="grid grid-charts-2">
+  <div class="chart-container large">
+    <div class="chart-header"><h3>Race predictions: 5K · 10K · HM · Marathon</h3><div class="latest" id="latest-race-summary">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-race"></canvas></div>
+  </div>
+  <div class="chart-container large">
+    <div class="chart-header"><h3>Endurance score · Hill score</h3></div>
+    <div class="canvas-wrap"><canvas id="chart-evo-scores"></canvas></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- CARGA DE ENTRENAMIENTO                                              -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Carga y volumen de entrenamiento</h2>
+<div class="grid grid-charts-2">
+  <div class="chart-container large">
+    <div class="chart-header"><h3>ACWR (acute 7d / chronic 28d)</h3><div class="latest" id="latest-acwr">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-acwr"></canvas></div>
+  </div>
+  <div class="chart-container large">
+    <div class="chart-header"><h3>Volumen semanal por modalidad</h3></div>
+    <div class="canvas-wrap"><canvas id="chart-weekly-volume"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>RPE histórico</h3></div>
+    <div class="canvas-wrap"><canvas id="chart-rpe"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Zonas HR — últimos 7 días</h3></div>
+    <div class="canvas-wrap"><canvas id="chart-zones"></canvas></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- HÁBITOS DIARIOS                                                     -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Hábitos y actividad diaria</h2>
+<div class="grid grid-charts-3">
+  <div class="chart-container">
+    <div class="chart-header"><h3>Pasos diarios</h3><div class="latest" id="latest-steps">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-steps"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Intensity minutes</h3><div class="latest" id="latest-im">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-intensity-minutes"></canvas></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-header"><h3>Floors climbed</h3><div class="latest" id="latest-floors">—</div></div>
+    <div class="canvas-wrap"><canvas id="chart-floors"></canvas></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- BITÁCORA HISTÓRICA                                                  -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<h2>Bitácora corporal — histórico completo</h2>
+<div class="card">
+  <table id="body-log-table">
+    <thead><tr><th>Fecha</th><th>Parte</th><th>Sev</th><th>Estado</th><th>Notas</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="footer">
+  Generado con <code>python scripts/build_dashboard.py</code>.
+  Para refrescar después de un sync: corré ese comando y recargá el HTML.
+  El coach también lo regenera automáticamente cuando hay data nueva
+  (ver <code>CLAUDE.md §0.2.b</code>).
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- Chart.js inlined                                                    -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<script>
+/*__CHARTJS__*/
+</script>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- Dashboard data inlined                                              -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<script>
+const DASHBOARD_DATA = /*__DATA__*/;
+</script>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- App                                                                 -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  const D = DASHBOARD_DATA;
+
+  // Chart.js global defaults
+  Chart.defaults.color = '#8b949e';
+  Chart.defaults.borderColor = '#21262d';
+  Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, sans-serif';
+  Chart.defaults.font.size = 11;
+
+  const COLORS = {
+    accent: '#58a6ff', accent2: '#79c0ff',
+    ok: '#3fb950', warn: '#d29922', danger: '#f85149', info: '#a371f7',
+    purple: '#bc8cff', orange: '#ffa657', cyan: '#39d0d8', pink: '#ff7b9c',
+  };
+
+  // ──────────────────────── Helpers ────────────────────────
+  function fmt(v, digits = 0, suffix = '') {
+    if (v === null || v === undefined || v === '') return '—';
+    if (typeof v === 'number') return v.toFixed(digits) + suffix;
+    return String(v) + suffix;
+  }
+  function fmtSec(s) {
+    if (!s) return '—';
+    const m = Math.floor(s / 60), sec = Math.round(s % 60);
+    if (m >= 60) {
+      const h = Math.floor(m / 60), mr = m % 60;
+      return `${h}h${String(mr).padStart(2,'0')}`;
+    }
+    return `${m}:${String(sec).padStart(2,'0')}`;
+  }
+  function setText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+  function setHTML(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+
+  function levelClass(metric, value) {
+    const t = D.profile.thresholds || {};
+    if (metric === 'sleep_h' && t.sleep_below_hours)
+      return value === null ? '' : (value < t.sleep_below_hours ? 'warn' : 'ok');
+    if (metric === 'bb' && t.body_battery_morning_below)
+      return value === null ? '' : (value < t.body_battery_morning_below ? 'warn' : 'ok');
+    if (metric === 'stress' && t.stress_avg_above)
+      return value === null ? '' : (value > t.stress_avg_above ? 'warn' : 'ok');
+    if (metric === 'readiness' && value !== null) {
+      if (value >= 75) return 'ok';
+      if (value >= 50) return 'warn';
+      return 'danger';
+    }
+    return '';
+  }
+
+  function deltaSpan(prev, curr, lowerIsBetter = false) {
+    if (prev === null || prev === undefined || curr === null || curr === undefined) return '';
+    const d = curr - prev;
+    if (Math.abs(d) < 0.01) return '<span class="delta delta-flat">·</span>';
+    const positive = (lowerIsBetter ? d < 0 : d > 0);
+    const cls = positive ? 'delta-up' : 'delta-down';
+    const sign = d > 0 ? '+' : '';
+    return `<span class="delta ${cls}">${sign}${d.toFixed(1)}</span>`;
+  }
+
+  // ──────────────────────── Header ────────────────────────
+  setText('profile-badge', D.profile.name);
+  setText('profile-desc', D.profile.description || '');
+  setText('athlete-name', D.athlete_profile && D.athlete_profile.devices ? '' : '');
+
+  // Coverage range
+  const trendKeys = Object.keys(D.trends || {});
+  let earliest = null, latest = null;
+  trendKeys.forEach(k => {
+    (D.trends[k] || []).forEach(([d]) => {
+      if (!earliest || d < earliest) earliest = d;
+      if (!latest || d > latest) latest = d;
+    });
+  });
+  setText('generated-at', 'Generado: ' + new Date(D.generated_at).toLocaleString());
+  setText('data-coverage', earliest && latest ? `Cobertura: ${earliest} → ${latest}` : 'Sin data');
+
+  // ──────────────────────── Hero row ────────────────────────
+  const cur = (D.current_state && D.current_state.wellness) || {};
+  const tr = (D.current_state && D.current_state.training) || {};
+  setText('current-date', cur.date ? `· ${cur.date}` : '');
+
+  function heroCard({ label, value, unit, sub, level }) {
+    return `
+      <div class="card-hero ${level || 'info'}">
+        <div class="label">${label}</div>
+        <div class="value">${value}<span class="value-unit">${unit || ''}</span></div>
+        <div class="sub-line">${sub || ''}</div>
+      </div>
+    `;
+  }
+
+  const heroCards = [];
+  // 1. Training Readiness
+  const rdLevel = tr.readiness_level || null;
+  const rdScore = tr.readiness_score;
+  let rdClass = 'info';
+  if (rdLevel === 'HIGH') rdClass = 'ok';
+  else if (rdLevel === 'MODERATE') rdClass = 'warn';
+  else if (rdLevel === 'LOW') rdClass = 'danger';
+  heroCards.push(heroCard({
+    label: 'Training Readiness',
+    value: fmt(rdScore),
+    unit: '/100',
+    sub: `<span class="pill ${rdClass}">${rdLevel || '—'}</span>` +
+         (tr.recovery_time_min !== undefined && tr.recovery_time_min !== null
+           ? ` · recovery ${tr.recovery_time_min}m` : ''),
+    level: rdClass,
+  }));
+  // 2. Body Battery
+  const bbHigh = cur.body_battery_high, bbLow = cur.body_battery_low;
+  heroCards.push(heroCard({
+    label: 'Body Battery',
+    value: fmt(bbHigh),
+    unit: bbHigh !== null ? '/100' : '',
+    sub: bbLow !== null ? `máx hoy · mín ${bbLow}` : '',
+    level: levelClass('bb', bbHigh),
+  }));
+  // 3. Sleep
+  heroCards.push(heroCard({
+    label: 'Sleep',
+    value: fmt(cur.sleep_score),
+    unit: '/100',
+    sub: cur.sleep_duration_h ? `${cur.sleep_duration_h.toFixed(1)}h dormidas` : '',
+    level: levelClass('sleep_h', cur.sleep_duration_h),
+  }));
+  // 4. HRV
+  const hrvStatusClass =
+    cur.hrv_status === 'BALANCED' || cur.hrv_status === 'balanced' ? 'ok' :
+    cur.hrv_status === 'LOW' || cur.hrv_status === 'low' ? 'danger' :
+    cur.hrv_status === 'HIGH' || cur.hrv_status === 'high' ? 'info' : 'neutral';
+  heroCards.push(heroCard({
+    label: 'HRV (anoche)',
+    value: fmt(cur.hrv_avg),
+    unit: 'ms',
+    sub: cur.hrv_status ? `<span class="pill ${hrvStatusClass}">${cur.hrv_status}</span>` : '',
+    level: hrvStatusClass === 'danger' ? 'danger' : (hrvStatusClass === 'ok' ? 'ok' : 'info'),
+  }));
+  document.getElementById('hero-row').innerHTML = heroCards.join('');
+
+  // ──────────────────────── Alerts ────────────────────────
+  const alertsEl = document.getElementById('alerts-section');
+  const alerts = (D.current_state && D.current_state.alerts) || [];
+  if (!alerts.length) {
+    alertsEl.innerHTML = '<div class="empty">Sin alertas activas. Todos los umbrales del perfil dentro de rango.</div>';
+  } else {
+    alertsEl.innerHTML = alerts.map(a => `
+      <div class="alert ${a.level || ''}">
+        <span class="level">${a.level || 'info'}</span>
+        <span class="msg">${a.message}</span>
+      </div>
+    `).join('');
+  }
+
+  // ──────────────────────── Profile cards ────────────────────────
+  const ap = D.athlete_profile || {};
+  const profileCards = [];
+
+  // Fitness Age
+  if (ap.fitness_age) {
+    const fa = ap.fitness_age;
+    const delta = (fa.fitness !== null && fa.chronological !== null)
+      ? (fa.fitness - fa.chronological) : null;
+    const deltaClass = delta < 0 ? 'delta-positive' : delta > 0 ? 'delta-negative' : '';
+    const deltaText = delta !== null ?
+      (delta < 0 ? `${delta.toFixed(1)} años más joven` : `+${delta.toFixed(1)} años`) : '';
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Fitness Age</div>
+        <div class="pc-main">${fa.fitness ? fa.fitness.toFixed(1) : '—'} <small>años</small></div>
+        <div class="pc-secondary">
+          Cronológica ${fa.chronological || '—'} ·
+          <span class="${deltaClass}">${deltaText}</span>
+        </div>
+        <div class="pc-grid">
+          <span class="k">Achievable</span>
+          <span class="v">${fa.achievable ? fa.achievable.toFixed(1) : '—'}</span>
+          <span class="k">Previa</span>
+          <span class="v">${fa.previous ? fa.previous.toFixed(1) : '—'}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // VO2max + Training Status
+  if (ap.vo2_max !== null && ap.vo2_max !== undefined) {
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">VO2 Max · Training Status</div>
+        <div class="pc-main">${ap.vo2_max.toFixed(1)} <small>ml/kg/min</small></div>
+        <div class="pc-secondary">${tr.training_status_feedback || tr.training_status_phrase || 'Sin status'}</div>
+        <div class="pc-grid">
+          <span class="k">ACWR factor</span>
+          <span class="v">${tr.acwr_factor_pct || '—'}% (${tr.acwr_factor_feedback || '—'})</span>
+          <span class="k">Acute load</span>
+          <span class="v">${tr.acute_load || '—'}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // Lactate Threshold (running)
+  if (ap.lactate_threshold) {
+    const lt = ap.lactate_threshold;
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Lactate Threshold (running)</div>
+        <div class="pc-main">${lt.running_hr_bpm || '—'} <small>bpm</small></div>
+        <div class="pc-secondary">FTP ${lt.running_ftp_w || '—'}W · ${lt.running_pwr_to_weight ? lt.running_pwr_to_weight.toFixed(2) : '—'} W/kg</div>
+        <div class="pc-grid">
+          <span class="k">Speed @ LT</span>
+          <span class="v">${lt.running_speed_ms ? (1000/(lt.running_speed_ms*60)).toFixed(2) : '—'} min/km</span>
+          <span class="k">Peso del test</span>
+          <span class="v">${lt.weight_kg_at_test ? lt.weight_kg_at_test.toFixed(1) + ' kg' : '—'}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // Cycling FTP
+  if (ap.cycling_ftp && ap.cycling_ftp.watts) {
+    const cf = ap.cycling_ftp;
+    const wKg = ap.lactate_threshold && ap.lactate_threshold.weight_kg_at_test
+      ? (cf.watts / ap.lactate_threshold.weight_kg_at_test).toFixed(2) : null;
+    const ageDays = cf.calendar_date
+      ? Math.floor((Date.now() - new Date(cf.calendar_date).getTime()) / 86400000) : null;
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Cycling FTP</div>
+        <div class="pc-main">${cf.watts} <small>W</small></div>
+        <div class="pc-secondary">${wKg ? wKg + ' W/kg' : ''} ${cf.stale ? '<span class="pill warn">stale</span>' : ''}</div>
+        <div class="pc-grid">
+          <span class="k">Última medición</span>
+          <span class="v">${cf.calendar_date ? cf.calendar_date.slice(0,10) : '—'}</span>
+          <span class="k">Hace</span>
+          <span class="v">${ageDays !== null ? ageDays + ' días' : '—'}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // Race predictions
+  if (ap.race_predictions) {
+    const rp = ap.race_predictions;
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Race Predictions (Garmin)</div>
+        <div class="pc-main">${fmtSec(rp['5k_s'])} <small>5K</small></div>
+        <div class="pc-secondary">Updated ${rp.calendar_date || '—'}</div>
+        <div class="pc-grid">
+          <span class="k">10K</span><span class="v">${fmtSec(rp['10k_s'])}</span>
+          <span class="k">Half Marathon</span><span class="v">${fmtSec(rp.hm_s)}</span>
+          <span class="k">Marathon</span><span class="v">${fmtSec(rp.marathon_s)}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // Body composition
+  const bc = ap.body_composition || {};
+  if (bc.weight_kg || bc.bmi) {
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Body composition</div>
+        <div class="pc-main">${bc.weight_kg ? bc.weight_kg.toFixed(1) : '—'} <small>kg</small></div>
+        <div class="pc-secondary">BMI ${bc.bmi ? bc.bmi.toFixed(1) : '—'}</div>
+        <div class="pc-grid">
+          <span class="k">Body fat</span><span class="v">${bc.body_fat_pct ? bc.body_fat_pct.toFixed(1) + '%' : '—'}</span>
+          <span class="k">Body water</span><span class="v">${bc.body_water_pct ? bc.body_water_pct.toFixed(1) + '%' : '—'}</span>
+          <span class="k">Muscle mass</span><span class="v">${bc.muscle_mass_kg ? bc.muscle_mass_kg.toFixed(1) + ' kg' : '—'}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // Endurance + Hill scores
+  if (ap.endurance_score !== null || ap.hill_score !== null) {
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Endurance · Hill score</div>
+        <div class="pc-main">${ap.endurance_score !== null ? ap.endurance_score : '—'}</div>
+        <div class="pc-secondary">Endurance score</div>
+        <div class="pc-grid">
+          <span class="k">Hill score</span>
+          <span class="v">${ap.hill_score !== null ? ap.hill_score : '—'}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  // Daily metrics extra: Respiration / SpO2 of today
+  if (tr.respiration_avg || tr.spo2_avg) {
+    profileCards.push(`
+      <div class="card profile-card">
+        <div class="pc-title">Respiración · SpO2 (hoy)</div>
+        <div class="pc-main">${tr.respiration_avg ? tr.respiration_avg.toFixed(1) : '—'} <small>brpm</small></div>
+        <div class="pc-secondary">SpO2 promedio ${tr.spo2_avg ? tr.spo2_avg.toFixed(0) + '%' : '—'}</div>
+        <div class="pc-grid">
+          <span class="k">SpO2 mínimo</span>
+          <span class="v">${tr.spo2_lowest ? tr.spo2_lowest + '%' : '—'}</span>
+          <span class="k">Devices</span>
+          <span class="v">${(ap.devices || []).length}</span>
+        </div>
+      </div>
+    `);
+  }
+
+  document.getElementById('profile-cards').innerHTML = profileCards.join('') ||
+    '<div class="empty">No hay snapshot del perfil. Corré garmin_sync.py.</div>';
+
+  // ──────────────────────── Open body issues ────────────────────────
+  const openIssues = (D.current_state && D.current_state.open_body_issues) || [];
+  const openTbody = document.querySelector('#open-issues-table tbody');
+  if (!openIssues.length) {
+    document.getElementById('open-issues-card').innerHTML =
+      '<div class="empty">Ninguna parte abierta. Todo en verde.</div>';
+  } else {
+    openIssues.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    openTbody.innerHTML = openIssues.map(i => {
+      const sev = parseInt(i.severidad);
+      const sevClass = sev >= 7 ? 'sev-high' : sev >= 4 ? 'sev-med' : 'sev-low';
+      return `<tr>
+        <td>${i.parte}</td>
+        <td class="num ${sevClass}">${i.severidad}/10</td>
+        <td>${i.fecha}</td>
+        <td>${i.notas || ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ──────────────────────── Body log history ────────────────────────
+  const logTbody = document.querySelector('#body-log-table tbody');
+  const log = (D.body_log_history || []).slice().reverse();
+  if (!log.length) {
+    document.getElementById('body-log-table').outerHTML =
+      '<div class="empty">Sin historial de bitácora.</div>';
+  } else {
+    logTbody.innerHTML = log.map(r => {
+      const sev = r.severidad;
+      const sevClass = sev >= 7 ? 'sev-high' : sev >= 4 ? 'sev-med' : 'sev-low';
+      return `<tr>
+        <td>${r.date}</td><td>${r.parte}</td>
+        <td class="num ${sevClass}">${sev}</td>
+        <td><span class="estado-${r.estado}">${r.estado}</span></td>
+        <td>${r.notas || ''}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ──────────────────────── Planned sessions (today + tomorrow) ────────────────────────
+  const ps = D.planned_sessions || {};
+  function planCard(row, kind) {
+    const className = kind === 'tomorrow' ? 'plan-card tomorrow' : 'plan-card';
+    const dayLabel = kind === 'today' ? 'HOY' : 'MAÑANA';
+    if (!row) {
+      return `<div class="${className}">
+        <div class="pl-day">${dayLabel}</div>
+        <div class="pl-empty">Sin entrada en master_plan.md.</div>
+      </div>`;
+    }
+    return `<div class="${className}">
+      <div class="pl-day">${dayLabel} · ${row.dia} · ${row.fecha}</div>
+      <div class="pl-title">${row.titulo}</div>
+      <div class="pl-detail">${row.detalle}</div>
+    </div>`;
+  }
+  document.getElementById('plan-grid').innerHTML =
+    planCard(ps.today, 'today') + planCard(ps.tomorrow, 'tomorrow');
+
+  // ──────────────────────── Mini agenda 7 días ────────────────────────
+  const agendaEl = document.getElementById('agenda-list');
+  const next7 = ps.next_7_days || [];
+  if (!next7.length) {
+    agendaEl.innerHTML = '<div class="empty">Sin entradas en master_plan.md para los próximos 7 días.</div>';
+  } else {
+    agendaEl.innerHTML = next7.map(r => `
+      <div class="agenda-row">
+        <div class="day">${r.dia}</div>
+        <div class="date">${r.fecha}</div>
+        <div class="title">${r.titulo}</div>
+      </div>
+    `).join('');
+  }
+
+  // ──────────────────────── Recent volume cards ────────────────────────
+  const rv = D.recent_volume || {};
+  function vol7d() {
+    const w7 = rv.last_7d || {};
+    const w14 = rv.last_14d || {};
+    const wow = rv.wow_deltas || {};
+
+    function fmtTime(s) {
+      if (!s) return '0';
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      return h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : `${m}m`;
+    }
+    function deltaPill(pct) {
+      if (pct === null || pct === undefined) return '';
+      const cls = pct > 5 ? 'up' : pct < -5 ? 'down' : 'flat';
+      const sign = pct > 0 ? '+' : '';
+      return `<span class="vc-delta ${cls}">${sign}${pct.toFixed(0)}% wow</span>`;
+    }
+    return [
+      `<div class="vol-card">
+        <div class="vc-label">Sesiones (7d)</div>
+        <div class="vc-value">${w7.sessions || 0}${deltaPill(wow.sessions)}</div>
+        <div class="vc-sub">14d: ${w14.sessions || 0} sesiones</div>
+      </div>`,
+      `<div class="vol-card">
+        <div class="vc-label">Tiempo activo (7d)</div>
+        <div class="vc-value">${fmtTime(w7.time_s)}${deltaPill(wow.time_s)}</div>
+        <div class="vc-sub">14d: ${fmtTime(w14.time_s)}</div>
+      </div>`,
+      `<div class="vol-card">
+        <div class="vc-label">Distancia (7d)</div>
+        <div class="vc-value">${(w7.distance_m / 1000).toFixed(1)}<span class="vc-unit">km</span>${deltaPill(wow.distance_m)}</div>
+        <div class="vc-sub">14d: ${(w14.distance_m / 1000).toFixed(1)} km</div>
+      </div>`,
+      `<div class="vol-card">
+        <div class="vc-label">Modalidades únicas (7d)</div>
+        <div class="vc-value">${Object.keys(w7.per_modality || {}).length}</div>
+        <div class="vc-sub">${Object.keys(w7.per_modality || {}).join(', ') || '—'}</div>
+      </div>`,
+    ].join('');
+  }
+  document.getElementById('volume-grid').innerHTML = vol7d();
+
+  // Modality breakdown (horizontal bars)
+  (function () {
+    const w7 = (rv.last_7d || {}).per_modality || {};
+    const mods = Object.entries(w7).sort((a, b) => b[1].time_s - a[1].time_s);
+    if (!mods.length) {
+      document.getElementById('modality-bars').innerHTML =
+        '<div class="empty">Sin sesiones en los últimos 7 días.</div>';
+      return;
+    }
+    const maxTime = Math.max(...mods.map(m => m[1].time_s));
+    document.getElementById('modality-bars').innerHTML = mods.map(([name, v]) => {
+      const pct = (v.time_s / maxTime) * 100;
+      const min = Math.round(v.time_s / 60);
+      const km = v.distance_m ? ` · ${(v.distance_m / 1000).toFixed(1)}km` : '';
+      return `<div class="mod-row">
+        <div class="mod-name">${name}</div>
+        <div class="mod-bar"><div class="mod-bar-fill" style="width:${pct}%"></div></div>
+        <div class="mod-time">${min}m${km}</div>
+      </div>`;
+    }).join('');
+  })();
+
+  // ──────────────────────── Profile history audit log ────────────────────────
+  const histEl = document.getElementById('history-list');
+  const hist = (D.profile_history || []).slice().reverse();  // newest first
+  if (!hist.length) {
+    histEl.innerHTML = '<div class="empty">Sin cambios registrados todavía. La próxima vez que `garmin_sync.py` actualice tu perfil, los cambios se loggean acá.</div>';
+  } else {
+    histEl.innerHTML = hist.slice(0, 50).map(h => `
+      <div class="history-row">
+        <div class="h-date">${h.date || ''}</div>
+        <div class="h-field">${h.field || ''}</div>
+        <div class="h-change">${h.from || '—'}<span class="arrow">→</span>${h.to || '—'}</div>
+      </div>
+    `).join('');
+  }
+
+  // ──────────────────────── Charts: helpers ────────────────────────
+  function lineSeries(canvasId, series, color, opts) {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return null;
+    const points = (series || []).slice(-90);
+    if (!points.length) {
+      ctx.parentElement.innerHTML = '<div class="empty">Sin datos.</div>';
+      return null;
+    }
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: points.map(p => p[0]),
+        datasets: [{
+          data: points.map(p => p[1]),
+          borderColor: color,
+          backgroundColor: color + '22',
+          tension: 0.3,
+          pointRadius: 1.5,
+          borderWidth: 2,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6, autoSkip: true }, grid: { display: false } },
+          y: { beginAtZero: false, grid: { color: '#21262d' } },
+        },
+      },
+    });
+  }
+
+  function setLatestText(elementId, series, formatter, lowerIsBetter = false) {
+    if (!series || !series.length) { setHTML(elementId, '—'); return; }
+    const last = series[series.length - 1][1];
+    const prev = series.length > 1 ? series[series.length - 2][1] : null;
+    setHTML(elementId, formatter(last) + (prev !== null ? deltaSpan(prev, last, lowerIsBetter) : ''));
+  }
+
+  // ──────────────────────── Wellness trends ────────────────────────
+  lineSeries('chart-sleep-score', D.trends.sleep_score, COLORS.accent);
+  setLatestText('latest-sleep_score', D.trends.sleep_score, v => v + '/100');
+
+  lineSeries('chart-sleep-duration', D.trends.sleep_duration_h, COLORS.ok);
+  setLatestText('latest-sleep_duration_h', D.trends.sleep_duration_h, v => v.toFixed(1) + 'h');
+
+  lineSeries('chart-hrv', D.trends.hrv_avg, COLORS.purple);
+  setLatestText('latest-hrv_avg', D.trends.hrv_avg, v => v + 'ms');
+
+  lineSeries('chart-rhr', D.trends.rhr, COLORS.danger);
+  setLatestText('latest-rhr', D.trends.rhr, v => Math.round(v) + ' bpm', true);
+
+  lineSeries('chart-stress', D.trends.stress_avg, COLORS.warn);
+  setLatestText('latest-stress_avg', D.trends.stress_avg, v => v.toString(), true);
+
+  // Body battery range chart (high + low)
+  (function () {
+    const ctx = document.getElementById('chart-bb');
+    const high = (D.trends.body_battery_high || []).slice(-90);
+    const low = (D.trends.body_battery_low || []).slice(-90);
+    if (!high.length && !low.length) {
+      ctx.parentElement.innerHTML = '<div class="empty">Sin datos.</div>'; return;
+    }
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: high.map(p => p[0]),
+        datasets: [
+          { label: 'high', data: high.map(p => p[1]), borderColor: COLORS.ok, backgroundColor: COLORS.ok+'22', tension: 0.3, pointRadius: 1.5, borderWidth: 2, fill: '+1' },
+          { label: 'low',  data: low.map(p => p[1]),  borderColor: COLORS.warn, backgroundColor: COLORS.warn+'22', tension: 0.3, pointRadius: 1.5, borderWidth: 2, fill: false },
+        ],
+      },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, max: 100, grid: { color: '#21262d' } }, x: { grid: { display: false } } } },
+    });
+    if (high.length) setHTML('latest-bb', high[high.length-1][1] + (low.length ? ` <small>· min ${low[low.length-1][1]}</small>` : ''));
+  })();
+
+  // ──────────────────────── Extended trends (training_readiness, respiration, spo2) ────────────────────────
+  lineSeries('chart-training-readiness', D.extended_trends.training_readiness, COLORS.info);
+  setLatestText('latest-training_readiness', D.extended_trends.training_readiness, v => v + '/100');
+
+  lineSeries('chart-respiration', D.extended_trends.respiration_avg, COLORS.cyan);
+  setLatestText('latest-respiration_avg', D.extended_trends.respiration_avg, v => v.toFixed(1) + ' brpm');
+
+  lineSeries('chart-spo2', D.extended_trends.spo2_avg, COLORS.accent2);
+  setLatestText('latest-spo2_avg', D.extended_trends.spo2_avg, v => v + '%');
+
+  // ──────────────────────── Athlete evolution ────────────────────────
+  function evoChart(canvasId, series, color, latestId, formatter, lowerIsBetter) {
+    lineSeries(canvasId, series, color);
+    if (latestId) setLatestText(latestId, series, formatter, lowerIsBetter);
+  }
+  const evo = D.athlete_evolution || {};
+  evoChart('chart-evo-fitness-age', evo.fitness_age, COLORS.ok, 'latest-fitness_age', v => v.toFixed(1), true);
+  evoChart('chart-evo-vo2max', evo.vo2max, COLORS.info, 'latest-vo2max', v => v.toFixed(1));
+  evoChart('chart-evo-ftp-cycling', evo.cycling_ftp_w, COLORS.orange, 'latest-cycling_ftp_w', v => v + 'W');
+  evoChart('chart-evo-ftp-running', evo.running_ftp_w, COLORS.purple, 'latest-running_ftp_w', v => v + 'W');
+  evoChart('chart-evo-lthr', evo.running_lthr_bpm, COLORS.danger, 'latest-running_lthr_bpm', v => v + ' bpm');
+  evoChart('chart-evo-weight', evo.weight_kg, COLORS.warn, 'latest-weight_kg', v => v.toFixed(1) + 'kg');
+
+  // Race predictions: 4 series in one chart
+  (function () {
+    const ctx = document.getElementById('chart-evo-race');
+    const races = [
+      { key: 'race_5k_s', label: '5K', color: COLORS.ok },
+      { key: 'race_10k_s', label: '10K', color: COLORS.accent },
+      { key: 'race_hm_s', label: 'HM', color: COLORS.warn },
+      { key: 'race_marathon_s', label: 'Marathon', color: COLORS.danger },
+    ];
+    const datasets = races
+      .filter(r => evo[r.key] && evo[r.key].length)
+      .map(r => ({
+        label: r.label,
+        data: evo[r.key].map(p => ({ x: p[0], y: p[1] / 60 })),  // seconds → minutes
+        borderColor: r.color,
+        backgroundColor: r.color + '22',
+        tension: 0.3, pointRadius: 2, borderWidth: 2, fill: false,
+      }));
+    if (!datasets.length) { ctx.parentElement.innerHTML = '<div class="empty">Sin race predictions todavía.</div>'; return; }
+    new Chart(ctx, {
+      type: 'line', data: { datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10 } },
+          tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmtSec(c.parsed.y * 60)}` } },
+        },
+        scales: {
+          x: { type: 'category' },
+          y: { beginAtZero: false, ticks: { callback: v => v.toFixed(0) + 'min' }, grid: { color: '#21262d' } },
+        },
+      },
+    });
+    // Latest summary for the title bar
+    const summary = races
+      .filter(r => evo[r.key] && evo[r.key].length)
+      .map(r => `${r.label} ${fmtSec(evo[r.key][evo[r.key].length-1][1])}`)
+      .join(' · ');
+    setHTML('latest-race-summary', summary || '—');
+  })();
+
+  // Endurance + Hill score combined
+  (function () {
+    const ctx = document.getElementById('chart-evo-scores');
+    const datasets = [];
+    if (evo.endurance_score && evo.endurance_score.length) {
+      datasets.push({
+        label: 'Endurance', data: evo.endurance_score.map(p => ({ x: p[0], y: p[1] })),
+        borderColor: COLORS.purple, backgroundColor: COLORS.purple+'22',
+        tension: 0.3, pointRadius: 2, borderWidth: 2, fill: false,
+      });
+    }
+    if (evo.hill_score && evo.hill_score.length) {
+      datasets.push({
+        label: 'Hill', data: evo.hill_score.map(p => ({ x: p[0], y: p[1] })),
+        borderColor: COLORS.orange, backgroundColor: COLORS.orange+'22',
+        tension: 0.3, pointRadius: 2, borderWidth: 2, fill: false,
+      });
+    }
+    if (!datasets.length) { ctx.parentElement.innerHTML = '<div class="empty">Sin endurance / hill score todavía.</div>'; return; }
+    new Chart(ctx, {
+      type: 'line', data: { datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } },
+        scales: { x: { type: 'category' }, y: { beginAtZero: false, grid: { color: '#21262d' } } },
+      },
+    });
+  })();
+
+  // ──────────────────────── ACWR ────────────────────────
+  (function () {
+    const ctx = document.getElementById('chart-acwr');
+    const acwr = (D.acwr || []).slice(-90);
+    if (!acwr.length) {
+      ctx.parentElement.innerHTML = '<div class="empty">Sin suficientes 28 días de historia para computar ACWR.</div>';
+      setHTML('latest-acwr', '—');
+      return;
+    }
+    const labels = acwr.map(r => r.date);
+    const ratio = acwr.map(r => r.ratio);
+    const acwrThreshold = (D.profile.thresholds || {}).acwr_above || 1.5;
+    const latest = acwr[acwr.length-1];
+    const acwrCls = latest.ratio >= acwrThreshold ? 'danger' : (latest.ratio >= 0.8 && latest.ratio <= 1.3 ? 'ok' : 'warn');
+    setHTML('latest-acwr', `<span class="pill ${acwrCls}">${latest.ratio.toFixed(2)}</span>`);
+    new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets: [
+        { label: 'ratio', data: ratio, borderColor: COLORS.accent, backgroundColor: COLORS.accent+'22', tension: 0.2, pointRadius: 2, borderWidth: 2, fill: true },
+        { label: `umbral (${acwrThreshold})`, data: labels.map(_ => acwrThreshold), borderColor: COLORS.danger, borderDash: [4,4], pointRadius: 0, borderWidth: 1.5, fill: false },
+        { label: 'sweet spot 1.0', data: labels.map(_ => 1.0), borderColor: COLORS.ok, borderDash: [2,4], pointRadius: 0, borderWidth: 1, fill: false },
+      ]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: {size: 10} } } },
+        scales: { y: { suggestedMin: 0.5, suggestedMax: 2, grid: { color: '#21262d' } }, x: { grid: { display: false } } } },
+    });
+  })();
+
+  // ──────────────────────── Weekly volume ────────────────────────
+  (function () {
+    const ctx = document.getElementById('chart-weekly-volume');
+    const wv = D.weekly_volume || [];
+    if (!wv.length) { ctx.parentElement.innerHTML = '<div class="empty">Sin sesiones registradas.</div>'; return; }
+    const allMods = new Set();
+    wv.forEach(w => Object.keys(w.modalities || {}).forEach(m => allMods.add(m)));
+    const mods = Array.from(allMods).sort();
+    const palette = ['#58a6ff','#3fb950','#d29922','#a371f7','#ff7b72','#79c0ff','#56d364','#e3b341','#bc8cff','#ffa657','#7ee787','#f0883e'];
+    const datasets = mods.map((m, i) => ({
+      label: m,
+      data: wv.map(w => Math.round(((w.modalities[m] || {}).time_s || 0) / 60)),
+      backgroundColor: palette[i % palette.length], borderWidth: 0, stack: 's1',
+    }));
+    new Chart(ctx, {
+      type: 'bar', data: { labels: wv.map(w => w.week), datasets },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => v + 'm' }, grid: { color: '#21262d' } } } },
+    });
+  })();
+
+  // ──────────────────────── RPE ────────────────────────
+  (function () {
+    const ctx = document.getElementById('chart-rpe');
+    const rpe = D.rpe_history || [];
+    if (!rpe.length) { ctx.parentElement.innerHTML = '<div class="empty">Sin RPE cargado.</div>'; return; }
+    new Chart(ctx, {
+      type: 'bar',
+      data: { labels: rpe.map(r => r.date), datasets: [{
+        label: 'RPE', data: rpe.map(r => r.rpe),
+        backgroundColor: rpe.map(r => r.rpe >= 8 ? COLORS.danger : r.rpe >= 6 ? COLORS.warn : COLORS.ok),
+        borderWidth: 0,
+      }]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, max: 10, grid: { color: '#21262d' } }, x: { grid: { display: false } } } },
+    });
+  })();
+
+  // ──────────────────────── HR zones donut ────────────────────────
+  (function () {
+    const ctx = document.getElementById('chart-zones');
+    const z = D.hr_zones_recent_7d || {};
+    const total = Object.values(z).reduce((a, b) => a + b, 0);
+    if (!total) { ctx.parentElement.innerHTML = '<div class="empty">Sin .fit con HR en los últimos 7 días.</div>'; return; }
+    new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: ['Z1','Z2','Z3','Z4','Z5'], datasets: [{
+        data: [z.Z1||0, z.Z2||0, z.Z3||0, z.Z4||0, z.Z5||0],
+        backgroundColor: [COLORS.ok, COLORS.accent2, COLORS.warn, COLORS.orange, COLORS.danger],
+        borderColor: '#161b22', borderWidth: 2,
+      }]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'right', labels: { boxWidth: 12 } },
+          tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed}s (${(100*c.parsed/total).toFixed(1)}%)` } },
+        } },
+    });
+  })();
+
+  // ──────────────────────── Habits (steps, IM, floors) ────────────────────────
+  lineSeries('chart-steps', D.extended_trends.steps_total, COLORS.cyan);
+  setLatestText('latest-steps', D.extended_trends.steps_total, v => v.toLocaleString());
+
+  lineSeries('chart-intensity-minutes', D.extended_trends.intensity_minutes_total, COLORS.purple);
+  setLatestText('latest-im', D.extended_trends.intensity_minutes_total, v => v + 'min');
+
+  lineSeries('chart-floors', D.extended_trends.floors, COLORS.orange);
+  setLatestText('latest-floors', D.extended_trends.floors, v => v + ' pisos');
+
+})();
+</script>
+
+</body>
+</html>

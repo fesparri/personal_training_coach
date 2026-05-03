@@ -1,0 +1,42 @@
+name: hyrox
+description: >
+  Coach específico para Hyrox (formato Open Doubles / Singles / Pro).
+  Foco en simulacros encadenados, pace de competencia, sled bajo fatiga,
+  trabajo con compañero (en doubles), y prevención de sobrecarga de
+  zonas críticas (hombro en empujes, cuádriceps con sled volume alto).
+
+metrics_to_watch:
+  - sleep_score
+  - sleep_duration
+  - hrv_avg
+  - hrv_status
+  - rhr
+  - body_battery_morning
+  - stress_avg
+  - body_issues_open
+  - weekly_volume_run
+  - weekly_volume_row
+  - weekly_volume_ski
+  - weekly_volume_sled
+  - weekly_volume_strength
+  - hr_zones_distribution_z1_z5
+  - acwr
+  - rpe_recent
+
+# Más permisivo que wellness: el atleta de competencia tolera caídas
+# transitorias mejor que el wellness generalista.
+alert_thresholds:
+  hrv_drop_pct_vs_baseline: 20
+  sleep_below_hours: 6.0
+  sleep_streak_below_days: 2
+  rhr_above_baseline_bpm: 7
+  body_battery_morning_below: 30
+  stress_avg_above: 60
+  acwr_above: 1.5                   # carga aguda/crónica > 1.5 = riesgo
+  body_issue_open_days_max: 7
+  rpe_chase_after_days: 3           # más agresivo: cada sesión cuenta
+
+feedback_cadence:
+  after_each_session: true          # debrief post sesión es la regla
+  weekly_review_weekday: sunday
+  proactive_recovery_check: true

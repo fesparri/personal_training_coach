@@ -1,0 +1,33 @@
+name: half_marathon
+description: >
+  Coach para preparación de media maratón (21,1 km). Foco en construir
+  base aeróbica, ritmo de carrera (E/M/T/I), volumen progresivo y peak +
+  taper. Stub mínimo — extendelo con tu plan específico.
+
+metrics_to_watch:
+  - sleep_score
+  - hrv_avg
+  - hrv_status
+  - rhr
+  - body_battery_morning
+  - body_issues_open
+  - weekly_volume_run
+  - weekly_long_run_km
+  - hr_zones_distribution_z1_z5
+  - acwr
+  - rpe_recent
+
+alert_thresholds:
+  hrv_drop_pct_vs_baseline: 20
+  sleep_below_hours: 6.5
+  sleep_streak_below_days: 2
+  rhr_above_baseline_bpm: 6
+  body_battery_morning_below: 40
+  acwr_above: 1.4                   # corredores son más sensibles a ACWR
+  body_issue_open_days_max: 5       # más conservador en miembros inferiores
+  rpe_chase_after_days: 3
+
+feedback_cadence:
+  after_each_session: true
+  weekly_review_weekday: sunday
+  proactive_recovery_check: true
