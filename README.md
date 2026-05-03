@@ -51,20 +51,39 @@ Sumás más perfiles propios con un comando — ver
 
 ## Demo del dashboard
 
-> _(screenshot pendiente — generá el tuyo con
-> `python scripts/build_dashboard.py` y abrí `dashboard.html` con doble
-> click. Incluye radiografía actual, alertas según los umbrales del
-> perfil activo, tendencias de sleep / HRV / RHR / Body Battery /
-> stress de los últimos 90 días, ACWR, volumen semanal por modalidad,
-> RPE histórico y zonas HR de los últimos 7 días.)_
+![Dashboard preview](assets/dashboard-preview.png)
+
+Hero con las 4 métricas críticas del día (Training Readiness · Body
+Battery · Sleep · HRV), agenda según `master_plan.md`, volumen reciente
+con WoW deltas, snapshot del perfil del atleta (Fitness Age, VO2max,
+LTHR, FTP cycling/running, Race Predictions, Body Composition),
+tendencias wellness 90d, evolución longitudinal de performance, ACWR,
+volumen semanal por modalidad, RPE, zonas HR y bitácora corporal.
+
+Generalo con `python scripts/build_dashboard.py` y abrilo con doble
+click — es un único HTML autocontenido (Chart.js inline), sin servidor
+ni internet.
 
 ---
 
 ## Quickstart
 
-Necesitás **Python 3.11+** (testeado con 3.13), una cuenta de
-**Garmin Connect**, y **[Claude Code](https://docs.claude.com/en/docs/claude-code)**
-instalado para usar el coach.
+### Requisitos
+
+- **Python 3.11+** (testeado con 3.13).
+- **Cuenta de Garmin Connect** activa con datos sincronizados (de un
+  reloj o app).
+- **[Claude Code](https://docs.claude.com/en/docs/claude-code)
+  instalado** para usar el coach conversacional. **Esto requiere una
+  cuenta Anthropic con plan activo (Pro / Max / Team) o créditos de
+  API.** Sin Claude Code podés igual usar los scripts CLI fallback
+  (`plan_session.py`, `feedback_session.py`) y el dashboard, pero
+  perdés la experiencia conversacional principal.
+- **Conocimiento básico de terminal** (clonar repo, instalar deps,
+  editar archivos de texto). El coach asistido te guía después, pero
+  los primeros 4 comandos los corrés vos en la terminal.
+- **macOS / Linux** (Windows debería funcionar con WSL pero no está
+  testeado).
 
 ### Modo asistido (recomendado, 2 comandos)
 
