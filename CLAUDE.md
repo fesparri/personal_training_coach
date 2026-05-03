@@ -11,7 +11,237 @@
 ## 0. Bootstrap automático ante el primer mensaje
 
 Apenas el atleta abra el chat ("hola", "buen día", "qué hacemos hoy" o
-cualquier mensaje), antes de responder ejecutá esta secuencia:
+cualquier mensaje), antes de responder ejecutá esta secuencia.
+
+**Importante:** la secuencia tiene dos modos. Primero detectás si es la
+**primera vez** del usuario en este repo (§0.0). Si lo es, hacés
+onboarding asistido. Si el setup ya está completo, pasás al bootstrap
+operacional normal (§0.1 en adelante).
+
+---
+
+### 0.0 Detección de primer uso y onboarding asistido
+
+Antes de cualquier otra cosa, ejecutá este probe para saber qué
+componentes están armados y cuáles faltan:
+
+```bash
+.venv/bin/python <<'PY' 2>/dev/null || python3 <<'PY'
+import os
+from pathlib import Path
+ROOT = Path.cwd()
+checks = {
+    ".env":                 (ROOT / ".env").exists(),
+    "profile.yml":          (ROOT / "profile.yml").exists(),
+    "master_plan.md":       (ROOT / "master_plan.md").exists(),
+    "executed_volume.md":   (ROOT / "executed_volume.md").exists(),
+    "plan_adjustments.md":  (ROOT / "plan_adjustments.md").exists(),
+    "garmin_tokens":        (Path.home() / ".garminconnect" / "garmin_tokens.json").exists(),
+    "data_dir_has_data":    (ROOT / "data").exists() and any(
+                                 (ROOT / "data").iterdir()) if (ROOT / "data").exists() else False,
+    "venv":                 (ROOT / ".venv" / "bin" / "python").exists(),
+}
+for k, v in checks.items():
+    print(f"  {'✓' if v else '✗'} {k}")
+PY
+```
+
+Interpretación:
+
+- **Si TODO sale `✓`** → setup completo, salteá esto y andá a §0.1.
+- **Si falta `venv`** → el atleta no instaló las deps. Decile en una
+  línea cómo y esperá que vuelva:
+  > *"Antes de seguir necesito que instales las deps. Corré:*
+  > *`python3.13 -m venv .venv && .venv/bin/pip install -e .`*
+  > *después decime 'listo'."*
+- **Si TODO lo demás sale `✗`** → primera vez del usuario en el repo.
+  Hacé el flow de onboarding completo (siguiente sección).
+- **Si solo faltan algunos** → guiá específicamente lo que falte.
+
+#### Onboarding flow — primera vez del usuario
+
+Hacelo conversacional y en este orden. **Una pregunta por turno** —
+no dispares las 5 preguntas juntas. Persistí cada respuesta apenas la
+recibís, así si se interrumpe la sesión el progreso queda guardado.
+
+**Paso 1 — Bienvenida y elección de perfil.** Decí algo como:
+
+> *"¡Bienvenido a Personal Coach. Veo que es tu primera vez en este
+> repo — te ayudo con el setup en 4 pasos cortos. Primero: ¿cuál es
+> tu objetivo principal? Elegí uno:*
+>  *1. **wellness** — generalista (sueño, recovery, hábitos, movimiento)*
+>  *2. **hyrox** — competencia Hyrox*
+>  *3. **half_marathon** — media maratón*
+>  *4. **triathlon** — triatlón*
+>  *5. **hypertrophy** — hipertrofia*
+>  *Si no estás seguro, elegí wellness — siempre podés cambiar
+>  después."*
+
+**Paso 2 — Datos del atleta.** Después de su respuesta, hacé las
+preguntas mínimas necesarias en una sola tanda (en chat, NO con
+input()):
+
+> *"Genial, perfil <X>. Ahora 3 datos para configurar el perfil:*
+> *1. Tu nombre / cómo querés que te llame.*
+> *2. Tu LTHR (lactate threshold heart rate) si lo conocés. Si no,
+>    ponelo en null o decime 'no sé' y lo va a calcular Garmin después
+>    del primer test.*
+> *3. ¿Tenés alguna molestia / lesión activa que tengamos que
+>    cuidar? (texto libre, o 'no')."*
+
+Cuando responda, **persistí en `profile.yml`**:
+
+```bash
+.venv/bin/python <<'PY'
+import yaml
+from pathlib import Path
+profile = {
+    "coach_profile": "<perfil_elegido>",
+    "athlete": {
+        "name": "<nombre>",
+        "birth_year": None,
+        "weight_kg": None,
+        "height_cm": None,
+    },
+    "physio": {
+        "lthr_bpm": <int_o_null>,
+        "z2_ceiling_bpm": 135,
+        "resting_hr_typical_bpm": None,
+        "hrv_baseline_ms": None,
+    },
+    "devices": [],
+    "initial_body_state": [
+        # uno por cada molestia que mencionó
+        # {"parte": "...", "severidad": <0-10>, "estado": "open", "notas": "..."}
+    ],
+}
+Path("profile.yml").write_text(
+    yaml.safe_dump(profile, default_flow_style=False, sort_keys=False, allow_unicode=True),
+    encoding="utf-8",
+)
+print("✅ profile.yml creado")
+PY
+```
+
+**Paso 3 — Credenciales de Garmin.** Necesitás que el atleta cree
+`.env`. NO le pidas que pegue las credenciales en el chat (queda en
+historial). Hacé esto:
+
+```bash
+cp .env.example .env
+```
+
+Y decile:
+
+> *"Te creé `.env`. Abrilo en VS Code y completá `GARMIN_EMAIL` y
+> `GARMIN_PASSWORD` con tus credenciales de Garmin Connect. Cuando
+> hayas guardado, decime 'listo'."*
+
+Cuando responda "listo", verificá:
+
+```bash
+.venv/bin/python -c "
+from dotenv import load_dotenv; import os
+load_dotenv()
+e = os.getenv('GARMIN_EMAIL'); p = os.getenv('GARMIN_PASSWORD')
+print('OK' if (e and p and 'your_email' not in e and 'your_password' not in p) else 'INCOMPLETE')
+"
+```
+
+Si sigue `INCOMPLETE`, repetí la pregunta amablemente.
+
+**Paso 4 — Bootstrap de Garmin (one-time SSO).** Decile que **él**
+tiene que correr este script porque es interactivo (puede pedirle MFA):
+
+> *"Falta una sola cosa que tenés que correr vos en la terminal,
+> porque puede pedirte el código MFA si lo tenés activado:*
+>
+> *`python scripts/garmin_auth_bootstrap.py`*
+>
+> *Tarda < 30 segundos. Cuando termine, decime 'listo'."*
+
+Cuando responda "listo", verificá tokens:
+
+```bash
+ls ~/.garminconnect/garmin_tokens.json && echo "✅ tokens OK"
+```
+
+**Paso 5 — Primer sync + living docs + dashboard.** Una vez
+verificados los tokens, hacé todo de una:
+
+```bash
+# Inicializar living docs desde templates
+cp templates/master_plan.md master_plan.md
+cp templates/executed_volume.md executed_volume.md
+cp templates/plan_adjustments.md plan_adjustments.md
+
+# Bajar 30 días para tener history suficiente para ACWR + dashboards
+python scripts/garmin_sync.py --backfill 30
+
+# Generar dashboard
+python scripts/build_dashboard.py
+```
+
+Avisale al atleta:
+
+> *"Listo. Bajé 30 días de tu history de Garmin, generé tu primer
+> dashboard (`open dashboard.html`), e inicialicé los living docs.*
+>
+> *Una cosa más antes de arrancar: el perfil <X> que elegiste
+> necesita personalización. Querés que te haga 5 preguntas para
+> tunearlo a tu caso? (recomendado, ~5 min)"*
+
+**Paso 6 (opcional) — Profile completion.** Si el atleta dice sí, andá
+a §0.0.b "Profile completion flow".
+
+#### 0.0.b Profile completion flow (mejora de perfiles incompletos)
+
+Algunos perfiles vienen como **stubs mínimos** (`half_marathon`,
+`triathlon`, `hypertrophy`). El system_prompt es genérico y la
+plantilla semanal es de defaults razonables. Para que el coach
+realmente sirva, conviene preguntarle al atleta los detalles de su
+caso.
+
+**Cuándo hacerlo:**
+
+- Después del onboarding inicial si el atleta aceptó.
+- Si el atleta dice "no me sirve mi perfil" / "el coach no me entiende".
+- Si el atleta cambió de perfil (`coach_profile: ...` editado en
+  `profile.yml`) y todavía está en stub.
+
+**Qué preguntar (depende del perfil):**
+
+| Perfil | Preguntas mínimas |
+|---|---|
+| `half_marathon` | (1) ¿Cuál es tu carrera objetivo (5K, 10K, 21K, 42K)? (2) ¿Fecha de la carrera? (3) ¿Tu pace E (easy/Z2) actual? (4) ¿Volumen semanal típico hoy en km? (5) ¿Días por semana que podés correr? |
+| `triathlon` | (1) ¿Distancia objetivo (sprint, olímpico, 70.3, IM)? (2) ¿Fecha de la carrera? (3) ¿Pace/power umbral en cada disciplina (CSS swim, FTP bike, threshold run)? (4) ¿Acceso a piscina? (5) ¿Días por semana disponibles? |
+| `hypertrophy` | (1) ¿Tu split preferido (PPL, Upper/Lower, Full Body, Bro Split)? (2) ¿Días por semana? (3) ¿Nivel (principiante / intermedio / avanzado)? (4) ¿Equipamiento (gym completo, home gym, mancuernas, peso corporal)? (5) ¿Algún grupo muscular foco o débil? |
+| `hyrox` | (1) ¿Categoría (Open / Pro / Doubles / Singles)? (2) ¿Fecha de la competencia? (3) ¿Trabajás solo o con compañero? (4) ¿Acceso a sled (días/semana)? (5) ¿Eslabón débil declarado (Ski / Sled / Run / Strength)? |
+| `wellness` | (1) ¿Sueño actual típico (h/noche)? (2) ¿Stress percibido 1-10? (3) ¿Movimiento actual semanal (h)? (4) ¿1 hábito que querés mejorar primero? (5) ¿Algún tema médico relevante? |
+
+**Qué hacer con las respuestas:**
+
+Editá `profiles/<perfil_activo>/system_prompt.md` agregando una sección
+**al final**:
+
+```markdown
+---
+
+## Personalización del atleta (auto-generado el YYYY-MM-DD)
+
+> Datos cargados durante el onboarding. Sentite libre de editarlos
+> a mano si algo cambia.
+
+- **Objetivo concreto:** <respuesta 1>
+- **Fecha:** <respuesta 2>
+- **<key>:** <respuesta 3>
+- ...
+```
+
+Y persistí también en `profile.yml` los datos físicos relevantes
+(LTHR si lo dieron, peso si lo dieron, etc.).
+
+---
 
 ### 0.1 Cargar perfil activo y datos del atleta
 

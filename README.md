@@ -60,32 +60,59 @@ Sumás más perfiles propios con un comando — ver
 
 ---
 
-## Quickstart en 5 pasos
+## Quickstart
 
 Necesitás **Python 3.11+** (testeado con 3.13), una cuenta de
 **Garmin Connect**, y **[Claude Code](https://docs.claude.com/en/docs/claude-code)**
-instalado para usar el coach (gratis si tenés cuenta Anthropic).
+instalado para usar el coach.
+
+### Modo asistido (recomendado, 2 comandos)
+
+El coach detecta el primer uso y te guía por todo el setup en
+conversación: elegís perfil, te pide datos, configura credenciales,
+hace el bootstrap de Garmin y baja la primera tanda de history. Solo
+necesitás **clonar e instalar deps**:
 
 ```bash
-# 1. Cloná el repo
 git clone <repo-url>
 cd personal-coach
-
-# 2. Creá el venv y las deps
 python3.13 -m venv .venv
 .venv/bin/pip install -e .
+```
 
-# 3. Configurá credenciales y perfil
+Después abrí Claude Code en el directorio del proyecto y decí
+**"hola"**. El coach se encarga del resto:
+
+1. Te pregunta qué perfil querés (wellness / hyrox / half_marathon /
+   triathlon / hypertrophy).
+2. Te pregunta tu nombre y datos físicos básicos (LTHR si lo
+   conocés, molestias activas).
+3. Te crea el `.env` y te pide editar las credenciales de Garmin
+   en VS Code.
+4. Te pide correr `python scripts/garmin_auth_bootstrap.py` una
+   sola vez (puede pedir MFA — por eso lo corrés vos).
+5. Inicializa tus living docs, baja 30 días de history y genera el
+   dashboard.
+6. Te ofrece **personalizar el perfil con preguntas específicas**
+   según tu objetivo (recomendado para perfiles stub).
+
+Total: ~5-10 minutos en conversación. La regla está en
+[`CLAUDE.md §0.0`](CLAUDE.md).
+
+### Modo manual (si preferís control total)
+
+```bash
+# Después de clonar + venv + pip install -e .
 cp .env.example .env
 # editá .env y completá GARMIN_EMAIL / GARMIN_PASSWORD
 
 cp profile.example.yml profile.yml
 # editá profile.yml: elegí coach_profile, completá tu LTHR y datos
 
-# 4. Bootstrap de Garmin (una sola vez — guarda tokens en ~/.garminconnect/)
+# Bootstrap de Garmin (una sola vez)
 .venv/bin/python scripts/garmin_auth_bootstrap.py
 
-# 5. Inicializá tus living docs y bajá data
+# Inicializá tus living docs y bajá data
 cp templates/master_plan.md master_plan.md
 cp templates/executed_volume.md executed_volume.md
 cp templates/plan_adjustments.md plan_adjustments.md
@@ -93,10 +120,7 @@ cp templates/plan_adjustments.md plan_adjustments.md
 .venv/bin/python scripts/build_dashboard.py
 ```
 
-Listo. Para el dashboard, abrí `dashboard.html` con doble click. Para
-empezar a coachearte, abrí Claude Code en este directorio y decile
-"hola" — el coach lee `CLAUDE.md`, carga tu perfil, sincroniza data
-si falta, y arranca la conversación.
+Después abrí Claude Code y decile "hola" para empezar a coachearte.
 
 ---
 
