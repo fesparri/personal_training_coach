@@ -22,6 +22,14 @@ MASTER_PLAN = PROJECT_ROOT / "master_plan.md"
 ADJUSTMENTS = PROJECT_ROOT / "plan_adjustments.md"
 LEDGER = PROJECT_ROOT / "executed_volume.md"
 
+# Manual data sources (Excel maintained by the athlete — no Garmin involved).
+MANUAL_DIR = DATA_DIR / "manual"
+BLOOD_XLSX = MANUAL_DIR / "blood.xlsx"
+ANTHRO_XLSX = MANUAL_DIR / "anthropometry.xlsx"
+BLOOD_RANGES_YML = MANUAL_DIR / "blood_reference_ranges.yml"
+BLOOD_PANEL_MD = PROJECT_ROOT / "blood_panel.md"
+BODY_COMP_MD = PROJECT_ROOT / "body_composition.md"
+
 # LTHR-based zone thresholds (atleta-specific, ver CLAUDE.md / master_plan.md).
 LTHR = 172
 ZONE_BOUNDS = [
@@ -1019,3 +1027,1222 @@ def current_open_body_issues() -> list[dict]:
         if prev is None or r["fecha"] >= prev["fecha"]:
             by_part[key] = r
     return [r for r in by_part.values() if r["estado"] == "open"]
+
+
+# ---------- manual data: blood + anthropometry ----------
+#
+# These two workbooks live at `data/manual/{blood,anthropometry}.xlsx` and
+# are maintained by hand (the atleta drops in lab results / antropometrist
+# evals). Format is wide — rows are markers/variables, columns are dates —
+# because that's how the atleta receives the data from lab and evaluator.
+# The readers below pivot to long format on the way out so callers get a
+# normalized `list[dict]` (same shape style as `read_bitacora_rows()`).
+#
+# **Marker/variable names are preserved verbatim** (typos, parenthetical
+# units, double-spaces all left intact). Canonical-name resolution is an
+# interpretation-layer concern, not a reader concern.
+
+def _coerce_excel_date(v: object) -> date | None:
+    """Coerce a workbook cell to a `date`. Accepts:
+
+    - real `datetime` / `date` objects (Excel-native date cells)
+    - strings in `DD/MM/YYYY` or `D/M/YYYY` (e.g. '21/03/2019', '28/6/2021')
+    - strings in `YYYY-MM-DD` or `DD-MM-YYYY`
+
+    Returns None for anything else (blanks, numbers, unparseable strings).
+    """
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+            try:
+                return datetime.strptime(s, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def _coerce_excel_float(v: object) -> float | None:
+    """Coerce a workbook cell to a float, or None if blank/unparseable.
+    Accepts ints, floats, and numeric strings with `,` or `.` decimal."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        s = v.strip().replace(",", ".")
+        if not s:
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    return None
+
+
+def _detect_date_header_row(ws, max_scan: int = 5) -> tuple[int, list[date | None]]:
+    """Find the first row in the sheet whose cells from col B onwards are
+    parseable as dates. Returns (row_number, [date|None per column from B]).
+
+    Tolerant to a leading empty row (the blood workbook has r1 empty + r2
+    dates; the anthropometry workbook has dates already at r1).
+
+    Raises:
+        ValueError if no qualifying row is found within `max_scan` rows.
+    """
+    upper = min(max_scan, ws.max_row)
+    for r in range(1, upper + 1):
+        row = next(ws.iter_rows(min_row=r, max_row=r, values_only=True))
+        if len(row) < 2:
+            continue
+        dates = [_coerce_excel_date(v) for v in row[1:]]
+        if sum(1 for d in dates if d is not None) >= 2:
+            return r, dates
+    raise ValueError(
+        f"No se encontró fila de encabezado con fechas en las primeras "
+        f"{max_scan} filas de la hoja {ws.title!r}. Esperado: una fila "
+        f"con fechas en columnas B en adelante (datetime nativo o string "
+        f"DD/MM/YYYY)."
+    )
+
+
+def load_blood_panel(path: Path = BLOOD_XLSX) -> list[dict]:
+    """Read the blood-panel workbook and pivot to long format.
+
+    Returns:
+        Sorted list of rows shaped:
+            [{'fecha': 'YYYY-MM-DD',
+              'marker': '<verbatim>',
+              'valor': float,
+              'sheet': '<sheet name>'}, ...]
+
+    Schema expected:
+        Sheet1 — wide: rows are markers (col A from header_row+1 onwards),
+            columns are dates (cols B onwards in the auto-detected header
+            row). Values are floats; empty cells skipped.
+        Sheet2 — optional, transposed: row 2 has markers in cols B onwards,
+            col A from row 3 has dates, cells are values. Merged into
+            Sheet1 with Sheet1 winning on conflict `(fecha, marker)`.
+
+    Markers preserved verbatim — typos and unit suffixes left intact.
+
+    Raises:
+        FileNotFoundError if `path` doesn't exist.
+        ValueError with a Spanish hint if the sheet structure can't be parsed.
+        RuntimeError if openpyxl is not installed.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No existe {path}. Esperado: workbook con análisis de sangre "
+            f"en formato ancho (fechas en columnas, marcadores en filas)."
+        )
+    try:
+        from openpyxl import load_workbook
+    except ImportError as e:
+        raise RuntimeError(
+            "openpyxl no está instalado. Corré: "
+            "`.venv/bin/pip install openpyxl==3.1.5`"
+        ) from e
+
+    wb = load_workbook(path, data_only=True)
+    if not wb.sheetnames:
+        raise ValueError(f"{path}: el workbook no tiene hojas.")
+
+    rows: list[dict] = []
+
+    # ---- Sheet1: wide, rows-as-markers × cols-as-dates ----
+    sheet1 = wb[wb.sheetnames[0]]
+    header_row, dates = _detect_date_header_row(sheet1)
+    for r in range(header_row + 1, sheet1.max_row + 1):
+        marker_cell = sheet1.cell(row=r, column=1).value
+        if marker_cell is None:
+            continue
+        marker = str(marker_cell).strip()
+        if not marker:
+            continue
+        for col_idx, d in enumerate(dates, start=2):
+            if d is None:
+                continue
+            v = _coerce_excel_float(sheet1.cell(row=r, column=col_idx).value)
+            if v is None:
+                continue
+            rows.append({
+                "fecha": d.isoformat(),
+                "marker": marker,
+                "valor": v,
+                "sheet": sheet1.title,
+            })
+
+    # ---- Sheet2 (optional): transposed, dates-as-rows × markers-as-cols ----
+    if len(wb.sheetnames) > 1:
+        sheet2 = wb[wb.sheetnames[1]]
+        if sheet2.max_row > 1 and sheet2.max_column > 1:
+            marker_row = None
+            for r in range(1, min(4, sheet2.max_row) + 1):
+                row_vals = [
+                    sheet2.cell(row=r, column=c).value
+                    for c in range(2, sheet2.max_column + 1)
+                ]
+                if sum(1 for v in row_vals if isinstance(v, str) and v.strip()) >= 2:
+                    marker_row = r
+                    break
+            if marker_row is not None:
+                markers = []
+                for c in range(2, sheet2.max_column + 1):
+                    v = sheet2.cell(row=marker_row, column=c).value
+                    markers.append(
+                        str(v).strip() if isinstance(v, str) and v.strip() else None
+                    )
+                seen = {(r["fecha"], r["marker"]) for r in rows}
+                for r in range(marker_row + 1, sheet2.max_row + 1):
+                    d = _coerce_excel_date(sheet2.cell(row=r, column=1).value)
+                    if d is None:
+                        continue
+                    for col_idx, marker in enumerate(markers, start=2):
+                        if marker is None:
+                            continue
+                        v = _coerce_excel_float(
+                            sheet2.cell(row=r, column=col_idx).value
+                        )
+                        if v is None:
+                            continue
+                        key = (d.isoformat(), marker)
+                        if key in seen:
+                            continue  # Sheet1 wins (per Phase 1 decision)
+                        rows.append({
+                            "fecha": d.isoformat(),
+                            "marker": marker,
+                            "valor": v,
+                            "sheet": sheet2.title,
+                        })
+                        seen.add(key)
+
+    rows.sort(key=lambda r: (r["fecha"], r["marker"]))
+    return rows
+
+
+def load_anthropometry(path: Path = ANTHRO_XLSX) -> list[dict]:
+    """Read the anthropometry workbook and pivot to long format.
+
+    Returns:
+        Sorted list of rows shaped:
+            [{'fecha': 'YYYY-MM-DD',
+              'variable': '<verbatim>',
+              'valor': float}, ...]
+
+    Schema expected:
+        Sheet1 only — wide: rows are variables (col A from header_row+1
+            onwards), columns are dates (cols B onwards in the auto-detected
+            header row). Sheet2+ ignored.
+
+    Variables preserved verbatim — typos like 'Pr. Brazo Relaiado (cm)' and
+    'Masa Osea (%]' are NOT cleaned here.
+
+    Raises:
+        FileNotFoundError if `path` doesn't exist.
+        ValueError if Sheet1 structure can't be parsed.
+        RuntimeError if openpyxl is not installed.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No existe {path}. Esperado: workbook con antropometrías en "
+            f"formato ancho (fechas en columnas, variables en filas)."
+        )
+    try:
+        from openpyxl import load_workbook
+    except ImportError as e:
+        raise RuntimeError(
+            "openpyxl no está instalado. Corré: "
+            "`.venv/bin/pip install openpyxl==3.1.5`"
+        ) from e
+
+    wb = load_workbook(path, data_only=True)
+    if not wb.sheetnames:
+        raise ValueError(f"{path}: el workbook no tiene hojas.")
+
+    sheet1 = wb[wb.sheetnames[0]]
+    header_row, dates = _detect_date_header_row(sheet1)
+
+    rows: list[dict] = []
+    for r in range(header_row + 1, sheet1.max_row + 1):
+        var_cell = sheet1.cell(row=r, column=1).value
+        if var_cell is None:
+            continue
+        variable = str(var_cell).strip()
+        if not variable:
+            continue
+        for col_idx, d in enumerate(dates, start=2):
+            if d is None:
+                continue
+            v = _coerce_excel_float(sheet1.cell(row=r, column=col_idx).value)
+            if v is None:
+                continue
+            rows.append({
+                "fecha": d.isoformat(),
+                "variable": variable,
+                "valor": v,
+            })
+
+    rows.sort(key=lambda r: (r["fecha"], r["variable"]))
+    return rows
+
+
+def latest_blood_panel() -> tuple[date, list[dict]] | None:
+    """Return (most-recent-draw date, rows of that draw only).
+
+    Mirrors `latest_athlete_metrics()`: returns None if the workbook is
+    missing or has no parseable data.
+    """
+    if not BLOOD_XLSX.exists():
+        return None
+    try:
+        all_rows = load_blood_panel(BLOOD_XLSX)
+    except (ValueError, FileNotFoundError):
+        return None
+    if not all_rows:
+        return None
+    latest = max(r["fecha"] for r in all_rows)
+    return date.fromisoformat(latest), [r for r in all_rows if r["fecha"] == latest]
+
+
+def latest_anthropometry() -> tuple[date, list[dict]] | None:
+    """Return (most-recent-eval date, rows of that eval only).
+    Mirrors `latest_athlete_metrics()`."""
+    if not ANTHRO_XLSX.exists():
+        return None
+    try:
+        all_rows = load_anthropometry(ANTHRO_XLSX)
+    except (ValueError, FileNotFoundError):
+        return None
+    if not all_rows:
+        return None
+    latest = max(r["fecha"] for r in all_rows)
+    return date.fromisoformat(latest), [r for r in all_rows if r["fecha"] == latest]
+
+
+def blood_marker_history(marker: str) -> list[tuple[str, float]]:
+    """All values for one blood marker across every draw, chronologically.
+
+    `marker` must match the verbatim string used in the workbook (e.g.
+    'Ferritina', 'Vitamina D', 'Hemoglobina glicosilada (%)'). No fuzzy
+    matching — use exactly what's in the file. Returns
+    `[('YYYY-MM-DD', value), ...]` ascending. Empty list if the marker is
+    unknown or the workbook is missing.
+
+    Mirrors `metric_history()` for Garmin JSON metrics.
+    """
+    if not BLOOD_XLSX.exists():
+        return []
+    try:
+        all_rows = load_blood_panel(BLOOD_XLSX)
+    except (ValueError, FileNotFoundError):
+        return []
+    return sorted(
+        ((r["fecha"], r["valor"]) for r in all_rows if r["marker"] == marker),
+        key=lambda t: t[0],
+    )
+
+
+def anthropometry_variable_history(variable: str) -> list[tuple[str, float]]:
+    """All values for one anthropometry variable across every eval.
+
+    `variable` must match verbatim (e.g. 'Peso (kg)', 'Masa Adiposa (%)',
+    'Pl. Tricipital (mm)'). Returns `[('YYYY-MM-DD', value), ...]`.
+    Mirrors `metric_history()` for Garmin JSON metrics.
+    """
+    if not ANTHRO_XLSX.exists():
+        return []
+    try:
+        all_rows = load_anthropometry(ANTHRO_XLSX)
+    except (ValueError, FileNotFoundError):
+        return []
+    return sorted(
+        ((r["fecha"], r["valor"]) for r in all_rows if r["variable"] == variable),
+        key=lambda t: t[0],
+    )
+
+
+# ---------- manual data: interpretation + persistence ----------
+#
+# Layered on top of the readers above. The flow is:
+#
+#   blood.xlsx + blood_reference_ranges.yml + active profile
+#       → interpret_blood_panel()    → dict (categorías, flags, tendencias)
+#       → refresh_blood_panel_md()   → blood_panel.md (living doc en root)
+#
+#   anthropometry.xlsx + heurísticas inline + active profile
+#       → interpret_anthropometry()  → dict (bloques, flags, tendencias)
+#       → refresh_body_composition_md() → body_composition.md
+#
+# Reglas:
+# - Banderas DURAS son universales — vienen del `trigger_si` del YAML
+#   (blood) o de chequeos hard-coded (anthro). Son señales clínicas, no
+#   de performance.
+# - Banderas BLANDAS son profile-aware — vienen de estar fuera de la
+#   `target_atleta[<perfil>]` band del YAML (blood) o de targets por
+#   perfil hard-coded (anthro).
+# - Las "lecturas de entrenamiento" son seed escritas en español; editalas
+#   directo en el YAML cuando no encajen con tu caso.
+
+def _active_coach_profile() -> str:
+    """Resolve the active coach profile name from profile.yml.
+
+    Inlined here (instead of importing from `profiles.registry`) so that
+    `_session_lib.py` stays self-contained and works from `python -c`
+    invocations that haven't put `profiles/` on the path.
+    """
+    profile_yml = PROJECT_ROOT / "profile.yml"
+    if not profile_yml.exists():
+        return "wellness"
+    try:
+        import yaml
+        data = yaml.safe_load(profile_yml.read_text(encoding="utf-8")) or {}
+        return str(data.get("coach_profile") or "wellness").strip()
+    except Exception:
+        return "wellness"
+
+
+def _load_blood_reference_ranges(path: Path = BLOOD_RANGES_YML) -> dict:
+    """Load the blood reference-ranges YAML. Empty dict if missing —
+    interpretation degrades to 'sin_rango' for every marker."""
+    if not Path(path).exists():
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"  ! could not read {path.name}: {e}")
+        return {}
+
+
+def _target_band(spec: dict, profile: str) -> tuple[float, float] | None:
+    """Resolve the soft-flag band for a marker spec + active profile.
+
+    Precedence: spec['target_atleta'][profile] → ['default'] → None.
+    """
+    t = spec.get("target_atleta")
+    if not isinstance(t, dict):
+        return None
+    band = t.get(profile) or t.get("default")
+    if isinstance(band, list) and len(band) == 2:
+        return float(band[0]), float(band[1])
+    return None
+
+
+def _classify_value(value: float, spec: dict, profile: str) -> tuple[str, str, str | None]:
+    """Given a value + marker spec + active profile, return:
+
+        (estado, flag_severity, trigger_msg)
+
+    where:
+        estado          ∈ {'bajo','borderline_bajo','normal','borderline_alto',
+                           'alto','sin_rango'}
+        flag_severity   ∈ {'dura','blanda','none'}
+        trigger_msg     = the matching string from spec['trigger_si'] if any,
+                          else None.
+
+    Hard flags (`dura`) come from `trigger_si` and are universal.
+    Soft flags (`blanda`) fire when the value falls outside the
+    profile-specific target band but inside the lab range.
+    """
+    rango = spec.get("rango_lab")
+    if not (isinstance(rango, list) and len(rango) == 2):
+        return "sin_rango", "none", None
+    # `null` (None) marks an "open" side of the range — no flag/borderline
+    # in that direction. Used e.g. for HDL ("≥ 40, no upper bound") and
+    # cholesterol total ("no lower bound").
+    lo = float(rango[0]) if rango[0] is not None else None
+    hi = float(rango[1]) if rango[1] is not None else None
+
+    # --- hard flags first (trigger_si evaluation) ---
+    trigger_msg = None
+    for rule in spec.get("trigger_si") or []:
+        rule_s = str(rule)
+        # crude but transparent: each rule string contains its own threshold,
+        # we evaluate just the inequalities we know how to parse. Pattern:
+        # "valor [<|<=|>|>=] N ..."
+        m = re.search(r"valor\s*(<=|>=|<|>)\s*([\d.]+)", rule_s)
+        if not m:
+            continue
+        op, thr_s = m.group(1), m.group(2)
+        try:
+            thr = float(thr_s)
+        except ValueError:
+            continue
+        fires = (
+            (op == "<"  and value <  thr) or
+            (op == "<=" and value <= thr) or
+            (op == ">"  and value >  thr) or
+            (op == ">=" and value >= thr)
+        )
+        if fires:
+            trigger_msg = rule_s
+            break
+
+    # --- estado vs lab range ---
+    # When a side is `None`, that direction is open (no out-of-range and
+    # no borderline classification on that side).
+    if lo is not None and value < lo:
+        estado = "bajo"
+    elif hi is not None and value > hi:
+        estado = "alto"
+    else:
+        if lo is not None and hi is not None:
+            span = max(hi - lo, 1e-9)
+            border = 0.10 * span
+            if value <= lo + border:
+                estado = "borderline_bajo"
+            elif value >= hi - border:
+                estado = "borderline_alto"
+            else:
+                estado = "normal"
+        elif lo is not None:
+            # open above — only check borderline_bajo (10% of lo)
+            estado = "borderline_bajo" if value <= lo * 1.10 else "normal"
+        elif hi is not None:
+            # open below — only check borderline_alto (10% of hi)
+            estado = "borderline_alto" if value >= hi * 0.90 else "normal"
+        else:
+            estado = "normal"
+
+    # --- soft flag from target_atleta band ---
+    if trigger_msg is not None:
+        severity = "dura"
+    else:
+        band = _target_band(spec, profile)
+        if band is not None:
+            in_band = True
+            if band[0] is not None and value < band[0]:
+                in_band = False
+            if band[1] is not None and value > band[1]:
+                in_band = False
+            severity = "none" if in_band else "blanda"
+        elif estado in ("bajo", "alto"):
+            # out of lab range but no trigger configured — treat as soft
+            severity = "blanda"
+        else:
+            severity = "none"
+
+    return estado, severity, trigger_msg
+
+
+def _compute_trend(values: list[float]) -> str:
+    """Heuristic trend tag from chronologically-sorted values.
+
+    Returns one of:
+        'sin_historia' — fewer than 2 points
+        'estable'      — last 4 vary < 10% of mean and no sustained direction
+        'subiendo'     — last value > penúltimo AND > avg of previous two
+        'bajando'      — symmetric
+        'volatil'      — last 4 have ≥ 2 sign changes AND range > 20% of mean
+    """
+    vs = [v for v in values if v is not None]
+    if len(vs) < 2:
+        return "sin_historia"
+    tail = vs[-4:]
+    mean = sum(tail) / len(tail) or 1e-9
+    rng = max(tail) - min(tail)
+
+    # volátil
+    if len(tail) >= 3:
+        deltas = [tail[i+1] - tail[i] for i in range(len(tail) - 1)]
+        sign_changes = sum(
+            1 for i in range(len(deltas) - 1)
+            if (deltas[i] > 0) != (deltas[i+1] > 0) and deltas[i] != 0 and deltas[i+1] != 0
+        )
+        if sign_changes >= 2 and rng > 0.20 * abs(mean):
+            return "volatil"
+
+    last = tail[-1]
+    prev = tail[-2]
+    prev_avg = sum(tail[:-2]) / max(len(tail) - 2, 1) if len(tail) >= 3 else prev
+
+    if rng < 0.10 * abs(mean):
+        return "estable"
+    if last > prev and last > prev_avg:
+        return "subiendo"
+    if last < prev and last < prev_avg:
+        return "bajando"
+    return "estable"
+
+
+def interpret_blood_panel(
+    path: Path = BLOOD_XLSX,
+    ranges_path: Path = BLOOD_RANGES_YML,
+    profile: str | None = None,
+) -> dict:
+    """Read blood.xlsx + ranges YAML, compute the interpretation of the
+    most-recent draw + per-marker trends.
+
+    Returns:
+        {
+          'fecha_ultima':    date,
+          'profile':         str,
+          'fechas_todas':    list[str],
+          'flags_duras':     list[interpreted_row],
+          'flags_blandas':   list[interpreted_row],
+          'estables':        list[interpreted_row],
+          'sin_interpretacion': list[raw_row + tendencia],
+          'todos':           list[interpreted_row] (last draw, every marker),
+          'por_categoria':   dict[categoria, list[interpreted_row]],
+          'historico':       list[dict] (every draw, every marker — for the
+                             "Histórico completo" section of the .md),
+        }
+
+    Each interpreted_row carries:
+        marker, valor, unidad, rango_lab, target_band, estado,
+        flag_severity, trigger_msg, tendencia, lectura, categoria.
+    """
+    if profile is None:
+        profile = _active_coach_profile()
+
+    all_rows = load_blood_panel(path)
+    if not all_rows:
+        return {
+            "fecha_ultima": None, "profile": profile, "fechas_todas": [],
+            "flags_duras": [], "flags_blandas": [], "estables": [],
+            "sin_interpretacion": [], "todos": [], "por_categoria": {},
+            "historico": [],
+        }
+    ranges = _load_blood_reference_ranges(ranges_path)
+    fechas = sorted({r["fecha"] for r in all_rows})
+    latest_iso = fechas[-1]
+    latest_rows = [r for r in all_rows if r["fecha"] == latest_iso]
+
+    # Build per-marker history (ascending) for trend computation
+    history_by_marker: dict[str, list[float]] = {}
+    for r in all_rows:
+        history_by_marker.setdefault(r["marker"], []).append((r["fecha"], r["valor"]))
+    for m in history_by_marker:
+        history_by_marker[m] = [v for _, v in sorted(history_by_marker[m])]
+
+    interpreted: list[dict] = []
+    for r in latest_rows:
+        marker = r["marker"]
+        spec = ranges.get(marker) or {}
+        history = history_by_marker.get(marker, [])
+        tendencia = _compute_trend(history)
+
+        if spec:
+            estado, severity, trigger_msg = _classify_value(r["valor"], spec, profile)
+            lectura_block = spec.get("lectura_entrenamiento") or {}
+            if estado in ("bajo", "borderline_bajo"):
+                lectura = lectura_block.get("bajo") or lectura_block.get("en_rango") or ""
+            elif estado in ("alto", "borderline_alto"):
+                lectura = lectura_block.get("alto") or lectura_block.get("en_rango") or ""
+            else:
+                lectura = lectura_block.get("en_rango") or ""
+            interpreted.append({
+                "marker": marker,
+                "valor": r["valor"],
+                "unidad": spec.get("unidad", ""),
+                "rango_lab": spec.get("rango_lab"),
+                "target_band": _target_band(spec, profile),
+                "estado": estado,
+                "flag_severity": severity,
+                "trigger_msg": trigger_msg,
+                "tendencia": tendencia,
+                "lectura": lectura,
+                "categoria": spec.get("categoria") or "otros",
+            })
+        else:
+            interpreted.append({
+                "marker": marker,
+                "valor": r["valor"],
+                "unidad": "",
+                "rango_lab": None,
+                "target_band": None,
+                "estado": "sin_rango",
+                "flag_severity": "none",
+                "trigger_msg": None,
+                "tendencia": tendencia,
+                "lectura": "",
+                "categoria": "sin_interpretacion",
+            })
+
+    flags_duras   = [x for x in interpreted if x["flag_severity"] == "dura"]
+    flags_blandas = [x for x in interpreted if x["flag_severity"] == "blanda"]
+    estables      = [x for x in interpreted if x["flag_severity"] == "none"
+                                              and x["categoria"] != "sin_interpretacion"]
+    sin_interp    = [x for x in interpreted if x["categoria"] == "sin_interpretacion"]
+
+    por_categoria: dict[str, list[dict]] = {}
+    for x in interpreted:
+        if x["categoria"] == "sin_interpretacion":
+            continue
+        por_categoria.setdefault(x["categoria"], []).append(x)
+    for cat in por_categoria:
+        por_categoria[cat].sort(key=lambda x: x["marker"].lower())
+
+    return {
+        "fecha_ultima": date.fromisoformat(latest_iso),
+        "profile": profile,
+        "fechas_todas": fechas,
+        "flags_duras": flags_duras,
+        "flags_blandas": flags_blandas,
+        "estables": estables,
+        "sin_interpretacion": sin_interp,
+        "todos": interpreted,
+        "por_categoria": por_categoria,
+        "historico": all_rows,
+    }
+
+
+# --- anthropometry: heurísticas inline ---------------------------------
+
+# Targets de body composition por perfil. `None` = no flag automático.
+_ANTHRO_TARGETS: dict[str, dict[str, tuple[float, float] | None]] = {
+    # (low, high) inclusive
+    "Masa Adiposa (%)": {
+        "hyrox": (10.0, 15.0),
+        "default": (10.0, 18.0),
+        "wellness": (10.0, 22.0),
+    },
+    "FFMI": {
+        # FFMI < 18 = subdesarrollado, > 25 = sospecha PEDs. Para Hyrox 20-24 es la banda sólida.
+        "hyrox": (20.0, 24.0),
+        "default": (18.0, 25.0),
+    },
+}
+
+# Etiquetas humanas por prefijo de nombre — el Excel mezcla varios protocolos.
+_ANTHRO_PREFIX_BLOCK = [
+    ("Pl. ",     "Pliegues"),
+    ("Pr. ",     "Perímetros"),
+    ("Diam. ",   "Diámetros"),
+    ("Masa ",    "Masas corporales"),
+    ("% Adiposidad ", "Distribución adiposa"),
+    ("Sum. ",    "Sumatorias"),
+    ("Endomorfia",  "Somatotipo"),
+    ("Mesomorfia",  "Somatotipo"),
+    ("Ectomorfia",  "Somatotipo"),
+    ("S.D.D",    "Somatotipo"),
+    ("Area Muscular ", "Áreas musculares"),
+    ("Req. ",    "Requerimiento energético"),
+    ("FFMI",     "Índices de desarrollo"),
+    ("Ind. ",    "Índices de desarrollo"),
+    ("Peso ",    "Morfología global"),
+    ("Talla",    "Morfología global"),
+    ("Edad ",    "Morfología global"),
+]
+
+
+def _anthro_block(variable: str) -> str:
+    for prefix, label in _ANTHRO_PREFIX_BLOCK:
+        if variable.startswith(prefix) or variable == prefix.strip():
+            return label
+    return "Otros"
+
+
+def interpret_anthropometry(
+    path: Path = ANTHRO_XLSX,
+    profile: str | None = None,
+) -> dict:
+    """Read anthropometry.xlsx + apply inline heuristics, returning the
+    interpretation of the most-recent eval + trends.
+
+    Special cases:
+        - `Masa Muscular (kg)` con valor > 200 → flag explícito 'unit_bug'
+          (preserva el valor crudo y excluye ese punto del cómputo de
+          tendencia).
+
+    Returns same shape as `interpret_blood_panel` but keyed on
+    `variable` instead of `marker`, and adds:
+        - `targets_profile`: dict de targets que se usaron (para que la
+          .md pueda explicitar la banda usada).
+    """
+    if profile is None:
+        profile = _active_coach_profile()
+
+    all_rows = load_anthropometry(path)
+    if not all_rows:
+        return {
+            "fecha_ultima": None, "profile": profile, "fechas_todas": [],
+            "flags_duras": [], "flags_blandas": [], "estables": [],
+            "todos": [], "por_bloque": {}, "historico": [],
+            "targets_profile": {},
+        }
+    fechas = sorted({r["fecha"] for r in all_rows})
+    latest_iso = fechas[-1]
+    latest_rows = [r for r in all_rows if r["fecha"] == latest_iso]
+
+    # history per variable, excluding unit-bug points for Masa Muscular (kg)
+    history_by_var: dict[str, list[tuple[str, float]]] = {}
+    for r in all_rows:
+        v = r["valor"]
+        if r["variable"] == "Masa Muscular (kg)" and v is not None and v > 200:
+            continue
+        history_by_var.setdefault(r["variable"], []).append((r["fecha"], v))
+    for k in history_by_var:
+        history_by_var[k] = [v for _, v in sorted(history_by_var[k])]
+
+    targets_used: dict[str, tuple[float, float]] = {}
+    interpreted: list[dict] = []
+    for r in latest_rows:
+        var = r["variable"]
+        val = r["valor"]
+        tendencia = _compute_trend(history_by_var.get(var, []))
+        bloque = _anthro_block(var)
+
+        flag_severity = "none"
+        trigger_msg = None
+        lectura = ""
+
+        # Unit-bug check
+        if var == "Masa Muscular (kg)" and val is not None and val > 200:
+            flag_severity = "dura"
+            trigger_msg = f"unit_bug: valor crudo {val} > 200 kg — probable error de unidad en la fuente; no se computa tendencia con este punto"
+            lectura = "Dato crudo preservado pero excluido de la tendencia hasta que se corrija en el Excel."
+
+        # Target-band check (soft flag)
+        band_spec = _ANTHRO_TARGETS.get(var)
+        band = None
+        if band_spec:
+            band = band_spec.get(profile) or band_spec.get("default")
+            if band:
+                targets_used[var] = band
+                if flag_severity == "none" and not (band[0] <= val <= band[1]):
+                    flag_severity = "blanda"
+
+        interpreted.append({
+            "variable": var,
+            "valor": val,
+            "estado": ("alto"  if band and val > band[1]
+                       else "bajo" if band and val < band[0]
+                       else "normal" if band
+                       else "sin_rango"),
+            "flag_severity": flag_severity,
+            "trigger_msg": trigger_msg,
+            "tendencia": tendencia,
+            "lectura": lectura,
+            "bloque": bloque,
+            "target_band": band,
+        })
+
+    flags_duras   = [x for x in interpreted if x["flag_severity"] == "dura"]
+    flags_blandas = [x for x in interpreted if x["flag_severity"] == "blanda"]
+    estables      = [x for x in interpreted if x["flag_severity"] == "none"]
+
+    por_bloque: dict[str, list[dict]] = {}
+    for x in interpreted:
+        por_bloque.setdefault(x["bloque"], []).append(x)
+    for k in por_bloque:
+        por_bloque[k].sort(key=lambda x: x["variable"].lower())
+
+    return {
+        "fecha_ultima": date.fromisoformat(latest_iso),
+        "profile": profile,
+        "fechas_todas": fechas,
+        "flags_duras": flags_duras,
+        "flags_blandas": flags_blandas,
+        "estables": estables,
+        "todos": interpreted,
+        "por_bloque": por_bloque,
+        "historico": all_rows,
+        "targets_profile": targets_used,
+    }
+
+
+# --- .md renderers -------------------------------------------------------
+
+_TREND_ARROW = {
+    "subiendo":    "↑",
+    "bajando":     "↓",
+    "estable":     "→",
+    "volatil":     "↕",
+    "sin_historia": "·",
+}
+
+_ESTADO_LABEL = {
+    "bajo":             "bajo",
+    "borderline_bajo":  "borderline-bajo",
+    "normal":           "normal",
+    "borderline_alto":  "borderline-alto",
+    "alto":             "alto",
+    "sin_rango":        "—",
+}
+
+
+def _fmt_value(v: float) -> str:
+    if v is None:
+        return "—"
+    if isinstance(v, float) and not v.is_integer() and abs(v) < 1000:
+        return f"{v:g}"
+    return f"{v}"
+
+
+def _fmt_band(band) -> str:
+    if not band:
+        return "—"
+    lo, hi = band
+    if lo is None and hi is None:
+        return "—"
+    if lo is None:
+        return f"≤ {_fmt_value(hi)}"
+    if hi is None:
+        return f"≥ {_fmt_value(lo)}"
+    return f"{_fmt_value(lo)}–{_fmt_value(hi)}"
+
+
+def _render_blood_panel_md(interp: dict) -> str:
+    """Render the full blood_panel.md from the dict returned by
+    `interpret_blood_panel()`."""
+    if interp["fecha_ultima"] is None:
+        return (
+            "# Panel sanguíneo — historial e interpretación\n\n"
+            "_No hay datos en `data/manual/blood.xlsx`._\n"
+        )
+
+    profile = interp["profile"]
+    last = interp["fecha_ultima"].isoformat()
+    fduras   = interp["flags_duras"]
+    fblandas = interp["flags_blandas"]
+    estables = interp["estables"]
+    sin_int  = interp["sin_interpretacion"]
+    por_cat  = interp["por_categoria"]
+    historico = interp["historico"]
+    fechas_todas = interp["fechas_todas"]
+
+    out = [
+        "# Panel sanguíneo — historial e interpretación",
+        "",
+        "> Generado por `_session_lib.refresh_blood_panel_md()` a partir de",
+        "> `data/manual/blood.xlsx` + `data/manual/blood_reference_ranges.yml`.",
+        "> **No editar a mano.** Las extracciones se gestionan agregando filas",
+        "> al Excel; este archivo se regenera automáticamente cuando el Excel",
+        "> está más fresco (ver CLAUDE.md §0.4-bis).",
+        ">",
+        f"> Última regeneración: {datetime.utcnow().isoformat(timespec='seconds')}Z",
+        f"> Perfil activo: **{profile}** · extracciones totales: {len(fechas_todas)}",
+        "",
+        "---",
+        "",
+        f"## Estado actual (al {last} — última extracción)",
+        "",
+        f"**Resumen ejecutivo:** {len(interp['todos'])} markers medidos · "
+        f"{len(fduras)} flag(s) dura(s) · {len(fblandas)} flag(s) blanda(s).",
+        "",
+        "### 🔴 Flags duras",
+        "",
+    ]
+    if not fduras:
+        out.append("_Sin flags duras en esta extracción._")
+    else:
+        for x in sorted(fduras, key=lambda y: y["marker"].lower()):
+            out.append(
+                f"- **{x['marker']} = {_fmt_value(x['valor'])} {x['unidad']}** "
+                f"(rango lab {_fmt_band(x['rango_lab'])}"
+                + (f", target atleta {_fmt_band(x['target_band'])}" if x['target_band'] else "")
+                + f") → **{_ESTADO_LABEL[x['estado']]}**. "
+                f"Tendencia: {_TREND_ARROW[x['tendencia']]} {x['tendencia']}."
+            )
+            if x.get("trigger_msg"):
+                out.append(f"  - {x['trigger_msg']}")
+            if x.get("lectura"):
+                out.append(f"  - *Lectura entrenamiento:* {x['lectura']}")
+    out.append("")
+    out.append("### 🟡 Flags blandas / contextuales")
+    out.append("")
+    if not fblandas:
+        out.append("_Sin flags blandas en esta extracción._")
+    else:
+        for x in sorted(fblandas, key=lambda y: y["marker"].lower()):
+            band = (f", target atleta {_fmt_band(x['target_band'])}" if x['target_band'] else "")
+            out.append(
+                f"- **{x['marker']} = {_fmt_value(x['valor'])} {x['unidad']}** "
+                f"(rango lab {_fmt_band(x['rango_lab'])}"
+                + band
+                + f") → {_ESTADO_LABEL[x['estado']]}. "
+                f"Tendencia: {_TREND_ARROW[x['tendencia']]} {x['tendencia']}."
+            )
+            if x.get("lectura"):
+                out.append(f"  - *Lectura:* {x['lectura']}")
+    out.append("")
+    out.append("### ✅ Estables / sin flag")
+    out.append("")
+    if not estables:
+        out.append("_Sin markers estables interpretados (¿la YAML está vacía?)._")
+    else:
+        chunks = [
+            f"{x['marker']} = {_fmt_value(x['valor'])}"
+            + (f" {x['unidad']}" if x['unidad'] else "")
+            for x in sorted(estables, key=lambda y: y["marker"].lower())
+        ]
+        # group into shortish lines
+        out.append(", ".join(chunks))
+    out.append("")
+    out.append("---")
+    out.append("")
+    out.append(f"## Por categoría — última extracción ({last})")
+    out.append("")
+    cat_order = ["hemograma", "ferroso", "metabolico", "lipidico",
+                 "hepatico", "renal", "endocrino", "vitaminas", "iones", "otros"]
+    cat_label = {
+        "hemograma": "Hemograma",
+        "ferroso":   "Perfil ferroso",
+        "metabolico":"Metabolismo glucémico",
+        "lipidico":  "Perfil lipídico",
+        "hepatico":  "Función hepática",
+        "renal":     "Función renal",
+        "endocrino": "Endócrino",
+        "vitaminas": "Vitaminas",
+        "iones":     "Iones / electrolitos",
+        "otros":     "Otros",
+    }
+    for cat in cat_order:
+        rows = por_cat.get(cat) or []
+        if not rows:
+            continue
+        out.append(f"### {cat_label[cat]}")
+        out.append("")
+        out.append("| Marker | Valor | Rango lab | Target atleta | Estado | Tendencia |")
+        out.append("|---|---:|---|---|---|---|")
+        for x in rows:
+            out.append(
+                f"| {x['marker']} | {_fmt_value(x['valor'])} {x['unidad']} "
+                f"| {_fmt_band(x['rango_lab'])} "
+                f"| {_fmt_band(x['target_band'])} "
+                f"| {_ESTADO_LABEL[x['estado']]} "
+                f"| {_TREND_ARROW[x['tendencia']]} {x['tendencia']} |"
+            )
+        out.append("")
+
+    if sin_int:
+        out.append("### Otros markers medidos (sin interpretación configurada)")
+        out.append("")
+        out.append("| Marker | Valor | Tendencia |")
+        out.append("|---|---:|---|")
+        for x in sorted(sin_int, key=lambda y: y["marker"].lower()):
+            out.append(
+                f"| {x['marker']} | {_fmt_value(x['valor'])} "
+                f"| {_TREND_ARROW[x['tendencia']]} {x['tendencia']} |"
+            )
+        out.append("")
+        out.append(
+            "_Estos markers aparecen en el Excel pero no tienen entrada en "
+            "`blood_reference_ranges.yml`. Agregalos al YAML para activar "
+            "interpretación + banderas._"
+        )
+        out.append("")
+
+    out.append("---")
+    out.append("")
+    out.append("## Histórico completo — append-only")
+    out.append("")
+    # group historico by fecha (most recent first)
+    by_fecha: dict[str, list[dict]] = {}
+    for r in historico:
+        by_fecha.setdefault(r["fecha"], []).append(r)
+    for fecha in sorted(by_fecha.keys(), reverse=True):
+        out.append(f"### Extracción {fecha}")
+        out.append("")
+        out.append("| Marker | Valor | Sheet |")
+        out.append("|---|---:|---|")
+        for r in sorted(by_fecha[fecha], key=lambda y: y["marker"].lower()):
+            out.append(
+                f"| {r['marker']} | {_fmt_value(r['valor'])} | {r.get('sheet','')} |"
+            )
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _render_body_composition_md(interp: dict) -> str:
+    """Render the full body_composition.md from `interpret_anthropometry()`."""
+    if interp["fecha_ultima"] is None:
+        return (
+            "# Composición corporal — historial e interpretación\n\n"
+            "_No hay datos en `data/manual/anthropometry.xlsx`._\n"
+        )
+
+    profile = interp["profile"]
+    last = interp["fecha_ultima"].isoformat()
+    fduras   = interp["flags_duras"]
+    fblandas = interp["flags_blandas"]
+    estables = interp["estables"]
+    por_bloque = interp["por_bloque"]
+    historico = interp["historico"]
+    fechas_todas = interp["fechas_todas"]
+    targets = interp["targets_profile"]
+
+    # locate key headline metrics in the latest eval
+    by_var = {x["variable"]: x for x in interp["todos"]}
+    headline_keys = [
+        "Peso (kg)",
+        "Masa Adiposa (%)",
+        "Masa Adiposa (kg)",
+        "Masa Muscular (%)",
+        "Masa Muscular (kg)",
+        "FFMI",
+        "FFMI Normalizado",
+        "Sum. de 6 Plieg. (mm)",
+        "Pr. Umbilical (cm)",
+    ]
+
+    out = [
+        "# Composición corporal — historial e interpretación",
+        "",
+        "> Generado por `_session_lib.refresh_body_composition_md()` a partir",
+        "> de `data/manual/anthropometry.xlsx`. **No editar a mano.** Las",
+        "> evaluaciones se gestionan agregando columnas al Excel; este",
+        "> archivo se regenera automáticamente.",
+        ">",
+        f"> Última regeneración: {datetime.utcnow().isoformat(timespec='seconds')}Z",
+        f"> Perfil activo: **{profile}** · evals totales: {len(fechas_todas)}",
+        "",
+        "---",
+        "",
+        f"## Estado actual (al {last} — última eval)",
+        "",
+        "**Resumen ejecutivo:**",
+        "",
+    ]
+    for key in headline_keys:
+        x = by_var.get(key)
+        if not x:
+            continue
+        band_str = ""
+        if x["target_band"]:
+            band_str = f" (banda perfil {profile}: {_fmt_band(x['target_band'])})"
+        out.append(
+            f"- **{key}** = {_fmt_value(x['valor'])} · "
+            f"{_TREND_ARROW[x['tendencia']]} {x['tendencia']}{band_str}"
+        )
+    out.append("")
+
+    out.append("### 🔴 Flags duras")
+    out.append("")
+    if not fduras:
+        out.append("_Sin flags duras en esta eval._")
+    else:
+        for x in fduras:
+            out.append(f"- **{x['variable']} = {_fmt_value(x['valor'])}** → {x['trigger_msg']}")
+            if x["lectura"]:
+                out.append(f"  - {x['lectura']}")
+    out.append("")
+    out.append("### 🟡 Flags blandas")
+    out.append("")
+    if not fblandas:
+        out.append("_Sin flags blandas en esta eval._")
+    else:
+        for x in fblandas:
+            band = f" (target {profile}: {_fmt_band(x['target_band'])})" if x["target_band"] else ""
+            out.append(
+                f"- **{x['variable']} = {_fmt_value(x['valor'])}**{band} → "
+                f"{_ESTADO_LABEL[x['estado']]}. "
+                f"Tendencia: {_TREND_ARROW[x['tendencia']]} {x['tendencia']}."
+            )
+    out.append("")
+
+    # trayectoria 12m de los headline
+    out.append("### Trayectoria headline (todas las evals)")
+    out.append("")
+    out.append("| Variable | Trayectoria (más antigua → más reciente) |")
+    out.append("|---|---|")
+    for key in headline_keys:
+        hist = anthropometry_variable_history(key)
+        if not hist:
+            continue
+        cells = ", ".join(f"{d}: {_fmt_value(v)}" for d, v in hist)
+        out.append(f"| {key} | {cells} |")
+    out.append("")
+
+    out.append("---")
+    out.append("")
+    out.append(f"## Por bloque — última eval ({last})")
+    out.append("")
+    bloque_order = [
+        "Morfología global", "Índices de desarrollo", "Pliegues", "Sumatorias",
+        "Perímetros", "Diámetros", "Masas corporales", "Distribución adiposa",
+        "Somatotipo", "Áreas musculares", "Requerimiento energético", "Otros",
+    ]
+    for bloque in bloque_order:
+        rows = por_bloque.get(bloque) or []
+        if not rows:
+            continue
+        out.append(f"### {bloque}")
+        out.append("")
+        out.append("| Variable | Valor | Estado | Target perfil | Tendencia |")
+        out.append("|---|---:|---|---|---|")
+        for x in rows:
+            out.append(
+                f"| {x['variable']} | {_fmt_value(x['valor'])} "
+                f"| {_ESTADO_LABEL[x['estado']]} "
+                f"| {_fmt_band(x['target_band'])} "
+                f"| {_TREND_ARROW[x['tendencia']]} {x['tendencia']} |"
+            )
+        out.append("")
+
+    out.append("---")
+    out.append("")
+    out.append("## Histórico completo — append-only")
+    out.append("")
+    by_fecha: dict[str, list[dict]] = {}
+    for r in historico:
+        by_fecha.setdefault(r["fecha"], []).append(r)
+    for fecha in sorted(by_fecha.keys(), reverse=True):
+        out.append(f"### Eval {fecha}")
+        out.append("")
+        out.append("| Variable | Valor |")
+        out.append("|---|---:|")
+        for r in sorted(by_fecha[fecha], key=lambda y: y["variable"].lower()):
+            out.append(f"| {r['variable']} | {_fmt_value(r['valor'])} |")
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def refresh_blood_panel_md(
+    output: Path = BLOOD_PANEL_MD,
+    profile: str | None = None,
+) -> Path:
+    """Regenerate `blood_panel.md` from `data/manual/blood.xlsx` +
+    `data/manual/blood_reference_ranges.yml`. Idempotent.
+
+    Returns the output path. Profile defaults to the active coach_profile.
+    """
+    interp = interpret_blood_panel(profile=profile)
+    out = Path(output)
+    out.write_text(_render_blood_panel_md(interp), encoding="utf-8")
+    return out
+
+
+def refresh_body_composition_md(
+    output: Path = BODY_COMP_MD,
+    profile: str | None = None,
+) -> Path:
+    """Regenerate `body_composition.md` from
+    `data/manual/anthropometry.xlsx`. Idempotent."""
+    interp = interpret_anthropometry(profile=profile)
+    out = Path(output)
+    out.write_text(_render_body_composition_md(interp), encoding="utf-8")
+    return out
+
+
+def manual_data_is_stale() -> dict[str, bool]:
+    """Compare mtimes: is the Excel newer than the rendered .md?
+
+    Returns:
+        {'blood': True|False, 'anthropometry': True|False}
+        True means the .md needs regeneration.
+    """
+    def stale(src: Path, md: Path) -> bool:
+        if not src.exists():
+            return False
+        if not md.exists():
+            return True
+        return src.stat().st_mtime > md.stat().st_mtime
+    return {
+        "blood":         stale(BLOOD_XLSX, BLOOD_PANEL_MD),
+        "anthropometry": stale(ANTHRO_XLSX, BODY_COMP_MD),
+    }
