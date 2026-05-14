@@ -336,3 +336,226 @@ Las zonas son:
 | Z3 | 135-154 |
 | Z4 | 155-171 |
 | Z5 | ≥ 172 |
+
+---
+
+## 8. `blood_panel.md` (living doc, generado)
+
+Living doc en root, **regenerado automáticamente** por
+`_session_lib.refresh_blood_panel_md()`. **No editar a mano.** La
+fuente es `data/manual/blood.xlsx` + `data/manual/blood_reference_ranges.yml`.
+
+### Sección fija
+
+```markdown
+# Panel sanguíneo — historial e interpretación
+
+> Generado por _session_lib.refresh_blood_panel_md() a partir de
+> data/manual/blood.xlsx + data/manual/blood_reference_ranges.yml.
+> ...
+> Última regeneración: YYYY-MM-DDTHH:MM:SSZ
+> Perfil activo: **<profile>** · extracciones totales: N
+
+---
+
+## Estado actual (al YYYY-MM-DD — última extracción)
+
+**Resumen ejecutivo:** N markers medidos · M flag(s) dura(s) · K flag(s) blanda(s).
+
+### 🔴 Flags duras
+<lista o "_Sin flags duras en esta extracción._">
+
+### 🟡 Flags blandas / contextuales
+<lista o "_Sin flags blandas en esta extracción._">
+
+### ✅ Estables / sin flag
+<lista inline "marker = valor unidad, ..." de markers en rango normal>
+
+---
+
+## Por categoría — última extracción (YYYY-MM-DD)
+
+### Hemograma
+### Perfil ferroso
+### Metabolismo glucémico
+### Perfil lipídico
+### Función hepática
+### Función renal
+### Endócrino
+### Vitaminas
+### Iones / electrolitos
+### Otros markers medidos (sin interpretación configurada)
+
+(cada categoría tiene una tabla:)
+| Marker | Valor | Rango lab | Target atleta | Estado | Tendencia |
+
+---
+
+## Histórico completo — append-only
+
+### Extracción YYYY-MM-DD
+| Marker | Valor | Sheet |
+...
+```
+
+### Reglas
+
+- **Headers exactos** — el rendering los emite literal.
+- **Categorías** vienen del campo `categoria:` en
+  `blood_reference_ranges.yml`. Markers sin entrada en el YAML caen en
+  "Otros markers medidos (sin interpretación configurada)".
+- **`Estado`** ∈ {`bajo`, `borderline-bajo`, `normal`,
+  `borderline-alto`, `alto`, `—`}.
+- **`Tendencia`** ∈ {`→ estable`, `↑ subiendo`, `↓ bajando`,
+  `↕ volatil`, `· sin_historia`} — calculada por `_compute_trend()`
+  sobre los últimos ≤ 4 valores.
+- **Rango lab** soporta lado abierto: `null` en cualquier extremo del
+  `rango_lab` se renderiza como `≤ N` o `≥ N`.
+- **Target atleta** es profile-aware: el rendering usa la banda del
+  `coach_profile` activo, o el `default` del YAML si no hay match.
+
+### Regeneración
+
+```bash
+python -c "import sys; sys.path.insert(0,'scripts'); \
+           from _session_lib import refresh_blood_panel_md; refresh_blood_panel_md()"
+```
+
+Idempotente. La sección "Histórico completo" se reescribe entera cada
+vez (la fuente de verdad es el Excel, no el `.md`). Si editás un valor
+viejo en el Excel y regenerás, queda reflejado.
+
+---
+
+## 9. `body_composition.md` (living doc, generado)
+
+Mismo patrón que §8 pero para antropometría. Generado por
+`_session_lib.refresh_body_composition_md()` desde
+`data/manual/anthropometry.xlsx`. **No editar a mano.**
+
+### Sección fija
+
+```markdown
+# Composición corporal — historial e interpretación
+
+> ...
+> Última regeneración: ...
+> Perfil activo: **<profile>** · evals totales: N
+
+---
+
+## Estado actual (al YYYY-MM-DD — última eval)
+
+**Resumen ejecutivo:**
+- **Peso (kg)** = N · <tendencia>
+- **Masa Adiposa (%)** = N · <tendencia> (banda perfil <X>: lo–hi)
+- **FFMI** = N · <tendencia> (banda perfil <X>: lo–hi)
+- ... (resto de headline vars)
+
+### 🔴 Flags duras
+<lista o "_Sin flags duras en esta eval._">
+
+### 🟡 Flags blandas
+<lista o "_Sin flags blandas en esta eval._">
+
+### Trayectoria headline (todas las evals)
+| Variable | Trayectoria (más antigua → más reciente) |
+
+---
+
+## Por bloque — última eval (YYYY-MM-DD)
+
+### Morfología global
+### Índices de desarrollo
+### Pliegues
+### Sumatorias
+### Perímetros
+### Diámetros
+### Masas corporales
+### Distribución adiposa
+### Somatotipo
+### Áreas musculares
+### Requerimiento energético
+### Otros
+
+(cada bloque tiene una tabla:)
+| Variable | Valor | Estado | Target perfil | Tendencia |
+
+---
+
+## Histórico completo — append-only
+
+### Eval YYYY-MM-DD
+| Variable | Valor |
+...
+```
+
+### Reglas
+
+- **Bloques** derivan del prefijo del nombre de variable
+  (`Pl.` → Pliegues, `Pr.` → Perímetros, `Diam.` → Diámetros,
+  `Masa` → Masas corporales, etc.). Variables que no calzan caen en
+  "Otros".
+- **Targets por perfil** son hard-coded en `_session_lib._ANTHRO_TARGETS`
+  (no hay YAML equivalente al de sangre — son heurísticas, no rangos
+  clínicos). Currently configured: `Masa Adiposa (%)` y `FFMI`.
+- **Detección de unit-bug:** `Masa Muscular (kg)` con valor > 200
+  dispara una flag dura `unit_bug` y el punto se excluye del cómputo
+  de tendencia. El valor crudo se preserva en el histórico.
+- **Tendencia** y formato de tabla iguales que §8.
+
+### Regeneración
+
+```bash
+python -c "import sys; sys.path.insert(0,'scripts'); \
+           from _session_lib import refresh_body_composition_md; refresh_body_composition_md()"
+```
+
+---
+
+## 10. `data/manual/blood_reference_ranges.yml`
+
+Config de interpretación de panel sanguíneo. **Editable a mano** —
+es conocimiento clínico, no PII. Versionado en el repo.
+
+Por marcador (key = string **verbatim** de la columna en `blood.xlsx`):
+
+```yaml
+"<marker verbatim>":
+  categoria: hemograma | ferroso | metabolico | lipidico | hepatico
+             | renal | endocrino | vitaminas | iones
+  unidad: "<string>"                 # informativo
+  rango_lab: [low, high]              # null en cualquier extremo = lado abierto
+  target_atleta:                      # opcional, profile-aware
+    default: [low, high]
+    <profile>: [low, high]
+  trigger_si:                         # opcional, banderas duras (universales)
+    - "valor [<|<=|>|>=] N → mensaje"
+  relevancia: endurance | strength | recovery | recovery_neuromuscular
+              | metabolico | cardio | renal | electrolitos | endocrino
+  lectura_entrenamiento:              # opcional, una línea por estado
+    en_rango: "..."
+    bajo: "..."
+    alto: "..."
+```
+
+Reglas:
+
+- **Keys verbatim.** Si un marker tiene typos en el Excel (e.g.
+  `'Vitamina B1  (nmol/L)'` con doble espacio), la key del YAML debe
+  matchear letra por letra.
+- **`rango_lab[null]`** marca lado abierto: el rendering produce
+  `≤ N` o `≥ N` y el clasificador no genera flag/borderline en ese
+  lado.
+- **`trigger_si`** son banderas duras universales (mismo flag para
+  cualquier perfil). El clasificador extrae el operador y el umbral
+  con regex `valor (<|<=|>|>=) N`; cualquier rule que no calce con
+  ese patrón se ignora.
+- **`target_atleta`** son banderas blandas profile-aware. Precedencia:
+  `<profile>` → `default` → no flag soft.
+
+### Cargado por
+
+`_session_lib._load_blood_reference_ranges()` lo lee en cada llamada a
+`interpret_blood_panel()`. No hay caché — editás el YAML y la próxima
+regeneración del `.md` lo refleja.

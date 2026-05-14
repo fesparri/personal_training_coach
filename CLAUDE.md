@@ -398,6 +398,43 @@ from _session_lib import (
 )
 ```
 
+### 0.4.b Leer la data manual del atleta (sangre + antropometría)
+
+Además de la data Garmin, el atleta mantiene dos workbooks Excel a mano:
+
+- `data/manual/blood.xlsx` — análisis de sangre (longitudinal, 1 col por extracción).
+- `data/manual/anthropometry.xlsx` — antropometrías (longitudinal, 1 col por eval).
+
+Estos se proyectan a dos **living docs en root** que vos leés como
+cualquier otro `.md` del proyecto:
+
+- `blood_panel.md` — estado actual + por categoría + histórico.
+- `body_composition.md` — estado actual + trayectoria headline + por bloque + histórico.
+
+**Regla de regeneración:** si el `.xlsx` está más fresco que el `.md`
+(o el `.md` no existe), regenerá antes de leer:
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import (
+    manual_data_is_stale, refresh_blood_panel_md, refresh_body_composition_md,
+)
+stale = manual_data_is_stale()
+if stale['blood']:         refresh_blood_panel_md()
+if stale['anthropometry']: refresh_body_composition_md()
+print('OK')
+PY
+```
+
+Después leé `blood_panel.md` (sección "Estado actual") y
+`body_composition.md` (sección "Estado actual" + "Trayectoria
+headline"). Si hay flags duras en cualquiera, mencionalas en el
+resumen del bootstrap junto a las partes del cuerpo abiertas.
+
+**No edités estos dos `.md` a mano** — se regeneran desde el Excel.
+Para corregir un valor, corregilo en el Excel y regenerá.
+
 ### 0.5 Cargar el perfil del atleta evolutivo
 
 Además del wellness diario, leé `athlete_metrics.json` — el snapshot
@@ -558,6 +595,41 @@ suyos en su `system_prompt.md`.
 | Una parte del cuerpo lleva > N días `open` sin update (N viene de `alert_thresholds.body_issue_open_days_max` del perfil) | "Hace X días que tenés Y `open` (sev N). ¿Sigue igual, mejoró, empeoró?" |
 | Pasaron > N días sin RPE cargado y hay sesiones loggeadas (N = `rpe_chase_after_days` del perfil) | "No me cargaste el RPE de las últimas X. ¿Cómo las sentiste 1-10?" |
 
+### Triggers basados en bioquímica y antropometría
+
+Estos vienen de `blood_panel.md` y `body_composition.md` (que el coach
+lee/regenera en §0.4.b). Las **flags duras** son universales (salud);
+las **blandas** y los targets dependen del perfil activo.
+
+| Trigger | Qué decís / hacés |
+|---|---|
+| Flag dura nueva en `blood_panel.md → Flags duras` | "Tenés `<marker>` con valor `<v>`. Antes de subir carga revisamos: \[ver `lectura entrenamiento` del marker en el .md\]. Esta semana mantengo el plan pero sin Z4-Z5 si te sentís pesado." |
+| Ferritina < 30 ng/mL | "Ferritina = X — déficit con impacto endurance. Vale consultar médico antes de subir aeróbico; mientras tanto, cambio fondos largos por Z2 corto o fuerza." |
+| Vitamina D < 20 ng/mL | "Vit D = X — déficit con impacto recovery / neuromuscular. No cambio el plan; el foco extra esta semana va en sueño y movilidad." |
+| TSH > 5 sostenido (≥ 2 extracciones) | "TSH = X dos veces seguidas. No subimos volumen significativo hasta nueva extracción." |
+| HbA1c ≥ 5.7 | "HbA1c = X — prediabetes. Cambio nutricional/médico, no toca el plan de hoy." |
+| Saturación de transferrina < 15% o > 55% | "Hierro funcional fuera de rango. Confirmá con ferritina antes de actuar." |
+| Sumatoria pliegues +5 mm en < 6 semanas con peso estable | "Pliegues subieron N mm con peso estable. Grasa ↑ músculo ↓. Si la fase es cut/competencia, revisamos." |
+| BF% fuera de la banda del perfil 3 evals seguidas | "Tres evals con `Masa Adiposa (%)` fuera de target `<low>-<high>%` para `<perfil>`. Lo reflejo en la próxima revisión de fase; no toca el bloque de esta semana." |
+| Peso > 2% en 7 días | NO flaggear como cambio de composición — probablemente hidratación/glucógeno. |
+| Unit-bug detectado (e.g. `Masa Muscular (kg)` > 200) | "Hay un valor crudo en el Excel que parece error de unidad (`<celda>`). Lo dejo preservado pero excluido de la tendencia hasta que lo corrijas." |
+
+**Jerarquía cuando hay conflicto entre señales** (en orden de
+prioridad descendente — la regla de la izquierda gana):
+
+```
+1. Lesión / dolor activo en bitácora      → bloquea/reemplaza la sesión de HOY
+2. Wellness del día (HRV/sueño/readiness) → modula la sesión de HOY
+3. Bioquímica con flag DURA               → modula la SEMANA o el MES
+4. Antropometría con desviación material  → modula la FASE (no la semana)
+5. Master plan                            → piso por default (no subir
+                                              cargas por flags; el plan
+                                              ya es el piso a respetar).
+```
+
+Las flags blandas son **conversacionales**, no modulan automáticamente
+el plan.
+
 ### Triggers basados en métricas de Garmin extendidas
 
 Estos vienen de `wellness_extended.json` y `athlete_metrics.json`. Son
@@ -650,6 +722,11 @@ y cómo invocarlo**. Estos son agnósticos al perfil.
 | `master_plan.md` | Plan diario, fases, métricas de éxito por fase. | Siempre, pre-flight. |
 | `plan_adjustments.md` | Append-only log de ajustes. | Siempre — últimas 3-5 entries. |
 | `executed_volume.md` | Tabla de actividades por semana + RPE por día + Bitácora corporal. | Siempre. |
+| `blood_panel.md` | Interpretación de la última extracción de sangre + trayectoria por marker + flags clínicos. Generado desde `data/manual/blood.xlsx` + `data/manual/blood_reference_ranges.yml`. **No editar a mano.** | En bootstrap si existe. |
+| `body_composition.md` | Interpretación de la última antropometría + trayectoria headline + flags vs targets del perfil. Generado desde `data/manual/anthropometry.xlsx`. **No editar a mano.** | En bootstrap si existe. |
+| `data/manual/blood.xlsx` | Fuente de panel sanguíneo — wide format, marcadores en filas, fechas en columnas. Mantenido a mano por el atleta. | Sólo si el `.md` no se generó o está stale. |
+| `data/manual/anthropometry.xlsx` | Fuente de antropometría — wide format, variables en filas, fechas en columnas. Mantenido a mano. | Sólo si el `.md` no se generó o está stale. |
+| `data/manual/blood_reference_ranges.yml` | Rangos lab + targets atleta + reglas de flag por marker. Editable cuando un rango cambia o el médico te da un target distinto. | Lo lee `interpret_blood_panel()` automáticamente — no lo abrís manualmente salvo para editar. |
 | `data/<fecha>/wellness.json` | Sleep / HRV / RHR / Body Battery / stress de Garmin. | Hoy + 7 días previos. |
 | `data/<fecha>/activities/*.json` | Resumen Garmin por actividad. | Hoy + 7 días previos. |
 | `data/<fecha>/activities/*.fit` | Raw .fit (parseable con fitparse). | Cuando necesitás zonas / splits / cadencia. |
@@ -797,6 +874,72 @@ for k, v in z.items():
 "
 ```
 
+#### Estado actual del panel sanguíneo
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import interpret_blood_panel
+ib = interpret_blood_panel()
+print(f"Última extracción: {ib['fecha_ultima']}  perfil: {ib['profile']}")
+print(f"  {len(ib['flags_duras'])} flags duras, {len(ib['flags_blandas'])} blandas")
+for x in ib['flags_duras'] + ib['flags_blandas']:
+    print(f"  ⚠  {x['marker']} = {x['valor']} {x['unidad']}  "
+          f"({x['flag_severity']}) — {x.get('trigger_msg') or x['lectura']}")
+PY
+```
+
+#### Trayectoria de un marker sanguíneo
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import blood_marker_history
+for d, v in blood_marker_history('Ferritina'):
+    print(f"  {d}: {v}")
+PY
+```
+
+`<marker>` debe coincidir **verbatim** con la cadena del Excel
+(incluyendo paréntesis, mayúsculas, typos). Lista las claves
+disponibles desde `interpret_blood_panel()` si dudás.
+
+#### Estado actual de la antropometría
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import interpret_anthropometry
+ia = interpret_anthropometry()
+print(f"Última eval: {ia['fecha_ultima']}  perfil: {ia['profile']}")
+print(f"  {len(ia['flags_duras'])} flags duras, {len(ia['flags_blandas'])} blandas")
+for x in ia['flags_duras'] + ia['flags_blandas']:
+    print(f"  ⚠  {x['variable']} = {x['valor']}  "
+          f"({x['flag_severity']}) — {x.get('trigger_msg') or x['lectura']}")
+PY
+```
+
+#### Trayectoria de una variable antropométrica
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import anthropometry_variable_history
+for d, v in anthropometry_variable_history('Peso (kg)'):
+    print(f"  {d}: {v} kg")
+PY
+```
+
+#### Chequear staleness de los `.md` manuales
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import manual_data_is_stale
+print(manual_data_is_stale())
+PY
+```
+
 ### 6.4 Helpers de **escritura** — persistencia desde conversación
 
 Cuando el atleta te contesta en conversación lo que vos le preguntaste,
@@ -941,6 +1084,34 @@ print("✅ día persistido")
 PY
 ```
 
+#### Regenerar `blood_panel.md` desde el Excel
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import refresh_blood_panel_md
+out = refresh_blood_panel_md()
+print("✅", out)
+PY
+```
+
+Idempotente. Lee `data/manual/blood.xlsx` + `data/manual/blood_reference_ranges.yml`,
+recomputa todo, y reescribe `blood_panel.md` en root. Si el atleta
+agregó una columna de extracción al Excel, esto la incorpora.
+
+#### Regenerar `body_composition.md` desde el Excel
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import refresh_body_composition_md
+out = refresh_body_composition_md()
+print("✅", out)
+PY
+```
+
+Mismo patrón. Lee `data/manual/anthropometry.xlsx`, recomputa, reescribe.
+
 ### 6.5 Recetas de uso (queries comunes)
 
 | Pregunta del atleta | Cómo responderla |
@@ -955,6 +1126,11 @@ PY
 | "¿La sesión del XX/XX cómo salió en zonas?" | `print_performance_feedback(date)` (§6.3). |
 | "¿Hay datos faltantes esta semana?" | `ls data/<año>-<mes>-*/wellness.json` → ver qué días no están y `garmin_sync.py --from <X> --to <Y>` si falta. |
 | "Cambié de objetivo / quiero pasar a otro perfil" | Editar `coach_profile` en `profile.yml` y reiniciar la conversación. La data, ledger y bitácora se preservan. Sugerir armar un `master_plan.md` nuevo desde el `weekly_template.md` del perfil nuevo. |
+| "¿Cómo viene mi `<marker>`?" (ej. "mi ferritina") | `blood_marker_history('<marker>')` + leer §"Estado actual" de `blood_panel.md` para el último valor + flag. |
+| "Subí los análisis nuevos al Excel" | `refresh_blood_panel_md()` → resumir flags duras/blandas nuevas + mostrar la lectura entrenamiento de cada una. |
+| "Subí una antropometría nueva al Excel" | `refresh_body_composition_md()` → resumir cambios vs eval previa (peso, BF%, FFMI, sumatoria pliegues) + flags. |
+| "¿Cómo viene mi peso / BF%?" | Leer §"Estado actual" y §"Trayectoria headline" de `body_composition.md`. |
+| "¿Cómo está mi composición corporal vs mi objetivo Hyrox?" | Leer §"Flags blandas" + headline vars en `body_composition.md` — los targets están parametrizados por perfil. |
 
 ### 6.6 Qué NUNCA hacés (universal)
 
@@ -962,6 +1138,11 @@ PY
   `input()` y te quedás colgado en stdin.
 - **No editás `session.md` / `plan_adjustments.md` /
   `executed_volume.md` con Edit/Write a mano.** Usá los helpers de §6.4.
+- **No editás `blood_panel.md` ni `body_composition.md` a mano.** Se
+  regeneran desde el Excel + YAML con `refresh_blood_panel_md()` /
+  `refresh_body_composition_md()`. Para cambiar un valor, corregilo en
+  `data/manual/<file>.xlsx` y regenerá. Para cambiar un rango o flag,
+  editá `data/manual/blood_reference_ranges.yml` y regenerá.
 - **No modificás `master_plan.md` inline.** Toda modificación va a
   `plan_adjustments.md`. El master plan se reescribe solo en revisiones
   formales de fase.
