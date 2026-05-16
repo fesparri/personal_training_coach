@@ -22,13 +22,19 @@ MASTER_PLAN = PROJECT_ROOT / "master_plan.md"
 ADJUSTMENTS = PROJECT_ROOT / "plan_adjustments.md"
 LEDGER = PROJECT_ROOT / "executed_volume.md"
 
-# Manual data sources (Excel maintained by the athlete — no Garmin involved).
+# Manual data sources (Excel / markdown maintained by the athlete —
+# no Garmin involved).
 MANUAL_DIR = DATA_DIR / "manual"
 BLOOD_XLSX = MANUAL_DIR / "blood.xlsx"
 ANTHRO_XLSX = MANUAL_DIR / "anthropometry.xlsx"
 BLOOD_RANGES_YML = MANUAL_DIR / "blood_reference_ranges.yml"
 BLOOD_PANEL_MD = PROJECT_ROOT / "blood_panel.md"
 BODY_COMP_MD = PROJECT_ROOT / "body_composition.md"
+
+# Research evidence (compendium of papers/studies the athlete adds as .md
+# files with YAML frontmatter; see templates/research_paper.md).
+RESEARCH_DIR = MANUAL_DIR / "research"
+RESEARCH_EVIDENCE_MD = PROJECT_ROOT / "research_evidence.md"
 
 # LTHR-based zone thresholds (atleta-specific, ver CLAUDE.md / master_plan.md).
 LTHR = 172
@@ -2230,11 +2236,15 @@ def refresh_body_composition_md(
 
 
 def manual_data_is_stale() -> dict[str, bool]:
-    """Compare mtimes: is the Excel newer than the rendered .md?
+    """Compare mtimes: is any source newer than its rendered .md?
 
     Returns:
-        {'blood': True|False, 'anthropometry': True|False}
+        {'blood': bool, 'anthropometry': bool, 'research': bool}
         True means the .md needs regeneration.
+
+    For `research`, the source is a directory — staleness fires if **any**
+    file under `data/manual/research/` is newer than `research_evidence.md`
+    (or if the .md doesn't exist yet but the directory has files).
     """
     def stale(src: Path, md: Path) -> bool:
         if not src.exists():
@@ -2242,7 +2252,448 @@ def manual_data_is_stale() -> dict[str, bool]:
         if not md.exists():
             return True
         return src.stat().st_mtime > md.stat().st_mtime
+
+    def stale_dir(src_dir: Path, md: Path, pattern: str = "*.md") -> bool:
+        if not src_dir.exists():
+            return False
+        sources = [p for p in src_dir.glob(pattern) if p.is_file()]
+        if not sources:
+            return False
+        if not md.exists():
+            return True
+        md_mtime = md.stat().st_mtime
+        return any(p.stat().st_mtime > md_mtime for p in sources)
+
     return {
         "blood":         stale(BLOOD_XLSX, BLOOD_PANEL_MD),
         "anthropometry": stale(ANTHRO_XLSX, BODY_COMP_MD),
+        "research":      stale_dir(RESEARCH_DIR, RESEARCH_EVIDENCE_MD),
     }
+
+
+# ---------- research evidence: papers, studies, peer-reviewed corpus ----
+#
+# Pattern mirrors blood / anthropometry:
+#
+#   data/manual/research/*.md (cada uno con frontmatter YAML)
+#       → load_research_papers()        → list[dict]
+#       → interpret_research(profile)   → dict (top, por tema, por perfil)
+#       → refresh_research_evidence_md() → research_evidence.md (root)
+#
+# Reglas:
+# - Cada `.md` en `data/manual/research/` representa una fuente
+#   (paper, meta-análisis, reporte, etc.). El frontmatter YAML al
+#   inicio del archivo trae la metadata; el cuerpo es texto libre.
+# - Frontmatter mínimo: `id`, `title`, `topics`, `profiles_relevant`,
+#   `tldr`. Faltantes degradan grácilmente (el paper aparece igual,
+#   sólo que sin filtros).
+# - El coach lee `research_evidence.md` para tener vista panorámica
+#   + top takeaways del perfil activo. Si necesita profundizar, abre
+#   el `.md` específico (la ruta está en la sección Catálogo).
+
+_FRONTMATTER_RE = re.compile(
+    r"\A---\s*\n(?P<yaml>.*?)\n---\s*\n(?P<body>.*)\Z",
+    re.DOTALL,
+)
+
+
+def _parse_research_frontmatter(text: str) -> tuple[dict, str]:
+    """Split a research .md into (frontmatter dict, body markdown).
+
+    If the file has no `---\\n...\\n---` block at the top, returns
+    `({}, text)` — the paper still loads, just without metadata.
+    """
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return {}, text
+    try:
+        import yaml
+        fm = yaml.safe_load(m.group("yaml")) or {}
+        if not isinstance(fm, dict):
+            fm = {}
+    except Exception as e:
+        print(f"  ! could not parse frontmatter YAML: {e}")
+        fm = {}
+    return fm, m.group("body")
+
+
+def _as_str_list(v) -> list[str]:
+    """Coerce a frontmatter field to a list of strings.
+
+    Accepts: None → []; str → [str]; list → [str(x) for x in list].
+    """
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v.strip()] if v.strip() else []
+    if isinstance(v, (list, tuple)):
+        return [str(x).strip() for x in v if str(x).strip()]
+    return [str(v).strip()]
+
+
+def load_research_papers(research_dir: Path = RESEARCH_DIR) -> list[dict]:
+    """Read every `.md` in `data/manual/research/` and return one dict
+    per file with normalized frontmatter + body + source path.
+
+    Returns:
+        Sorted list (most recent `date_added` first; ties broken by id)
+        of dicts shaped:
+            {
+              'id':                  str (defaults to filename stem),
+              'path':                str (path relative to PROJECT_ROOT),
+              'title':               str,
+              'authors':             list[str],
+              'year':                int | None,
+              'source':              str,
+              'venue':               str,
+              'doi':                 str | None,
+              'url':                 str | None,
+              'evidence_quality':    str,
+              'topics':              list[str],
+              'profiles_relevant':   list[str],   # may contain "all"
+              'tldr':                str,
+              'key_findings':        list[str],
+              'training_implications': list[str],
+              'tags':                list[str],
+              'date_added':          str (YYYY-MM-DD) | "",
+              'body':                str (markdown body without frontmatter),
+            }
+
+    Files without parseable frontmatter still appear with the body
+    intact and metadata defaults. The directory not existing returns [].
+    """
+    research_dir = Path(research_dir)
+    if not research_dir.exists():
+        return []
+
+    papers: list[dict] = []
+    for path in sorted(research_dir.glob("*.md")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except Exception as e:
+            print(f"  ! could not read {path.name}: {e}")
+            continue
+        fm, body = _parse_research_frontmatter(raw)
+
+        try:
+            rel_path = str(path.relative_to(PROJECT_ROOT))
+        except ValueError:
+            rel_path = str(path)
+
+        paper = {
+            "id":                   str(fm.get("id") or path.stem).strip(),
+            "path":                 rel_path,
+            "title":                str(fm.get("title") or path.stem).strip(),
+            "authors":              _as_str_list(fm.get("authors")),
+            "year":                 fm.get("year") if isinstance(fm.get("year"), int) else None,
+            "source":               str(fm.get("source") or "").strip(),
+            "venue":                str(fm.get("venue") or "").strip(),
+            "doi":                  (str(fm.get("doi")).strip() if fm.get("doi") else None),
+            "url":                  (str(fm.get("url")).strip() if fm.get("url") else None),
+            "evidence_quality":     str(fm.get("evidence_quality") or "unspecified").strip(),
+            "topics":               _as_str_list(fm.get("topics")),
+            "profiles_relevant":    _as_str_list(fm.get("profiles_relevant")) or ["all"],
+            "tldr":                 str(fm.get("tldr") or "").strip(),
+            "key_findings":         _as_str_list(fm.get("key_findings")),
+            "training_implications": _as_str_list(fm.get("training_implications")),
+            "tags":                 _as_str_list(fm.get("tags")),
+            "date_added":           str(fm.get("date_added") or "").strip(),
+            "body":                 body,
+        }
+        papers.append(paper)
+
+    # most recent first; ties by id
+    papers.sort(key=lambda p: (p["date_added"] or "0000-00-00", p["id"]), reverse=True)
+    return papers
+
+
+def research_papers_by_topic(topic: str) -> list[dict]:
+    """All papers whose `topics` list contains `topic` (case-insensitive)."""
+    t = topic.strip().lower()
+    return [p for p in load_research_papers() if t in {x.lower() for x in p["topics"]}]
+
+
+def research_papers_for_profile(profile: str | None = None) -> list[dict]:
+    """Papers relevant to a given coach profile.
+
+    A paper matches if `profiles_relevant` includes the profile **or**
+    contains `"all"`. Returns the full list (in default load order) if
+    no profile is given.
+    """
+    papers = load_research_papers()
+    if not profile:
+        return papers
+    p = profile.strip().lower()
+    out = []
+    for paper in papers:
+        relevant = {x.lower() for x in paper["profiles_relevant"]}
+        if p in relevant or "all" in relevant:
+            out.append(paper)
+    return out
+
+
+def find_research_paper(paper_id: str) -> dict | None:
+    """Return a single paper by id, or None if not found.
+
+    Useful when the coach needs to surface the full body / detailed
+    findings of a paper it already mentioned by id.
+    """
+    pid = paper_id.strip().lower()
+    for p in load_research_papers():
+        if p["id"].lower() == pid:
+            return p
+    return None
+
+
+def interpret_research(
+    research_dir: Path = RESEARCH_DIR,
+    profile: str | None = None,
+) -> dict:
+    """Build the structured view consumed by the renderer.
+
+    Returns:
+        {
+          'profile':          str (active coach profile),
+          'total_papers':     int,
+          'papers':           list[paper_dict] (all papers, full),
+          'papers_relevant':  list[paper_dict] (filtered to the active profile),
+          'by_topic':         dict[str, list[paper_dict]],
+          'by_evidence':      dict[str, list[paper_dict]],
+          'top_takeaways':    list[(paper_id, paper_title, implication_str)],
+        }
+    """
+    if profile is None:
+        profile = _active_coach_profile()
+
+    papers = load_research_papers(research_dir)
+    if not papers:
+        return {
+            "profile": profile, "total_papers": 0,
+            "papers": [], "papers_relevant": [],
+            "by_topic": {}, "by_evidence": {},
+            "top_takeaways": [],
+        }
+
+    p_low = profile.strip().lower()
+    papers_relevant: list[dict] = []
+    for p in papers:
+        relevant = {x.lower() for x in p["profiles_relevant"]}
+        if p_low in relevant or "all" in relevant:
+            papers_relevant.append(p)
+
+    by_topic: dict[str, list[dict]] = {}
+    for p in papers:
+        for t in p["topics"]:
+            by_topic.setdefault(t.lower(), []).append(p)
+    for k in by_topic:
+        by_topic[k].sort(key=lambda x: (x.get("year") or 0, x["id"]), reverse=True)
+
+    by_evidence: dict[str, list[dict]] = {}
+    for p in papers:
+        by_evidence.setdefault(p["evidence_quality"], []).append(p)
+    for k in by_evidence:
+        by_evidence[k].sort(key=lambda x: (x.get("year") or 0, x["id"]), reverse=True)
+
+    # Top takeaways: flatten `training_implications` from profile-relevant
+    # papers, preserving paper attribution. The coach uses these as the
+    # quick-reference checklist when planning.
+    top_takeaways: list[tuple[str, str, str]] = []
+    for p in papers_relevant:
+        for imp in p["training_implications"]:
+            top_takeaways.append((p["id"], p["title"], imp))
+
+    return {
+        "profile":         profile,
+        "total_papers":    len(papers),
+        "papers":          papers,
+        "papers_relevant": papers_relevant,
+        "by_topic":        by_topic,
+        "by_evidence":     by_evidence,
+        "top_takeaways":   top_takeaways,
+    }
+
+
+def _render_research_evidence_md(interp: dict) -> str:
+    """Render the full research_evidence.md from `interpret_research()`."""
+    if interp["total_papers"] == 0:
+        return (
+            "# Evidencia científica — compendio para coaching\n\n"
+            "_No hay papers en `data/manual/research/`. Agregá uno con "
+            "`cp templates/research_paper.md data/manual/research/<slug>.md` "
+            "y editá el frontmatter._\n"
+        )
+
+    profile = interp["profile"]
+    papers   = interp["papers"]
+    relevant = interp["papers_relevant"]
+    by_topic = interp["by_topic"]
+    by_evidence = interp["by_evidence"]
+    takeaways = interp["top_takeaways"]
+
+    out: list[str] = [
+        "# Evidencia científica — compendio para coaching",
+        "",
+        "> Generado por `_session_lib.refresh_research_evidence_md()` a partir",
+        "> de los `.md` en `data/manual/research/`. **No editar a mano.** Los",
+        "> papers / estudios se gestionan agregando archivos `.md` con",
+        "> frontmatter YAML; este archivo se regenera automáticamente cuando",
+        "> alguno de los fuentes está más fresco (ver CLAUDE.md §0.4.b).",
+        ">",
+        f"> Última regeneración: {datetime.utcnow().isoformat(timespec='seconds')}Z",
+        f"> Perfil activo: **{profile}** · papers totales: {len(papers)} · "
+        f"relevantes para el perfil: {len(relevant)}",
+        "",
+        "---",
+        "",
+        "## Estado actual",
+        "",
+        f"**Resumen ejecutivo:** {len(papers)} fuentes en el compendio · "
+        f"{len(by_topic)} temas únicos · "
+        f"{len(by_evidence)} niveles de calidad de evidencia.",
+        "",
+        "**Por calidad de evidencia:**",
+        "",
+    ]
+    for q in sorted(by_evidence.keys()):
+        out.append(f"- **{q}** — {len(by_evidence[q])} paper(s)")
+    out.append("")
+    out.append("---")
+    out.append("")
+
+    # ---- Top takeaways for active profile ----
+    out.append(f"## Top takeaways para el perfil activo (**{profile}**)")
+    out.append("")
+    if not takeaways:
+        out.append(
+            f"_No hay papers con `profiles_relevant` que incluya `{profile}` o `all`. "
+            "Editá el frontmatter de los `.md` en `data/manual/research/` para "
+            "marcarlos relevantes._"
+        )
+    else:
+        out.append(
+            "Estos son los bullets que el coach puede citar al proponer o "
+            "ajustar sesiones. La columna `paper` linkea al detalle."
+        )
+        out.append("")
+        out.append("| # | Implicación práctica | Paper |")
+        out.append("|---:|---|---|")
+        for i, (pid, title, imp) in enumerate(takeaways, start=1):
+            short_title = title if len(title) <= 60 else title[:57] + "…"
+            out.append(f"| {i} | {imp} | [{pid}](#{_md_anchor(pid)}) — {short_title} |")
+    out.append("")
+    out.append("---")
+    out.append("")
+
+    # ---- Index by topic ----
+    out.append("## Índice por tema")
+    out.append("")
+    if not by_topic:
+        out.append("_Ningún paper tiene `topics` declarado en el frontmatter._")
+    else:
+        for topic in sorted(by_topic.keys()):
+            out.append(f"### `{topic}`")
+            out.append("")
+            for p in by_topic[topic]:
+                year = f" ({p['year']})" if p.get("year") else ""
+                out.append(
+                    f"- [{p['id']}](#{_md_anchor(p['id'])}) — **{p['title']}**{year}"
+                    + (f" · _{p['tldr']}_" if p["tldr"] else "")
+                )
+            out.append("")
+    out.append("---")
+    out.append("")
+
+    # ---- Catalog: full per-paper cards ----
+    out.append("## Catálogo completo de papers")
+    out.append("")
+    out.append(
+        "Cada card muestra metadata + key findings + training implications. "
+        "El cuerpo completo del paper vive en el archivo fuente (link al pie)."
+    )
+    out.append("")
+    for p in papers:
+        out.append(f"### {p['id']}")
+        out.append("")
+        out.append(f"**{p['title']}**")
+        out.append("")
+        meta_bits = []
+        if p["authors"]:
+            authors = ", ".join(p["authors"][:3])
+            if len(p["authors"]) > 3:
+                authors += ", et al."
+            meta_bits.append(authors)
+        if p.get("year"):
+            meta_bits.append(str(p["year"]))
+        if p["source"]:
+            meta_bits.append(p["source"])
+        if p["venue"]:
+            meta_bits.append(p["venue"])
+        if meta_bits:
+            out.append("_" + " · ".join(meta_bits) + "_")
+            out.append("")
+
+        out.append(
+            f"- **Calidad evidencia:** `{p['evidence_quality']}`"
+            + (f" · **Año:** {p['year']}" if p.get("year") else "")
+        )
+        if p["topics"]:
+            out.append("- **Temas:** " + ", ".join(f"`{t}`" for t in p["topics"]))
+        if p["profiles_relevant"]:
+            out.append("- **Perfiles relevantes:** " + ", ".join(f"`{x}`" for x in p["profiles_relevant"]))
+        if p["tags"]:
+            out.append("- **Tags:** " + ", ".join(f"`{t}`" for t in p["tags"]))
+        link_bits = []
+        if p.get("doi"):
+            link_bits.append(f"DOI `{p['doi']}`")
+        if p.get("url"):
+            link_bits.append(f"[link]({p['url']})")
+        if link_bits:
+            out.append("- **Referencias:** " + " · ".join(link_bits))
+        if p["date_added"]:
+            out.append(f"- **Date added:** {p['date_added']}")
+        out.append("")
+
+        if p["tldr"]:
+            out.append("**TL;DR.** " + p["tldr"])
+            out.append("")
+
+        if p["key_findings"]:
+            out.append("**Key findings:**")
+            out.append("")
+            for f in p["key_findings"]:
+                out.append(f"- {f}")
+            out.append("")
+
+        if p["training_implications"]:
+            out.append("**Training implications:**")
+            out.append("")
+            for f in p["training_implications"]:
+                out.append(f"- {f}")
+            out.append("")
+
+        out.append(f"_Fuente:_ [`{p['path']}`]({p['path']})")
+        out.append("")
+        out.append("---")
+        out.append("")
+
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _md_anchor(s: str) -> str:
+    """GitHub-flavored markdown anchor: lowercase + dashes."""
+    return re.sub(r"[^a-z0-9-]+", "", s.lower().replace(" ", "-").replace("_", "-"))
+
+
+def refresh_research_evidence_md(
+    output: Path = RESEARCH_EVIDENCE_MD,
+    profile: str | None = None,
+) -> Path:
+    """Regenerate `research_evidence.md` from `data/manual/research/*.md`.
+    Idempotent. Profile defaults to the active coach_profile.
+
+    Returns the output path.
+    """
+    interp = interpret_research(profile=profile)
+    out = Path(output)
+    out.write_text(_render_research_evidence_md(interp), encoding="utf-8")
+    return out

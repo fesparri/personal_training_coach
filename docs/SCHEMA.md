@@ -559,3 +559,152 @@ Reglas:
 `_session_lib._load_blood_reference_ranges()` lo lee en cada llamada a
 `interpret_blood_panel()`. No hay caché — editás el YAML y la próxima
 regeneración del `.md` lo refleja.
+
+---
+
+## 11. `data/manual/research/<slug>.md` (fuente, mantenido a mano)
+
+Compendio de papers / estudios / reportes peer-reviewed. Un `.md` por
+fuente. Cada archivo tiene **YAML frontmatter** al inicio + **cuerpo
+libre** debajo. El living doc `research_evidence.md` se genera a partir
+de estos archivos.
+
+### Estructura del archivo
+
+```markdown
+---
+id: <slug-en-kebab-case>
+title: "<Título>"
+authors:
+  - "<Autor 1>"
+  - "<Autor 2>"
+year: 2024                              # int | null
+source: "<Universidad / Lab / Institución>"
+venue: "<Journal / Conferencia / SSAC Report / Preprint>"
+doi: null                                # string | null
+url: null                                # string | null
+evidence_quality: peer_reviewed          # ver vocabulario abajo
+topics:
+  - <topic_1>
+  - <topic_2>
+profiles_relevant:
+  - <perfil>                             # hyrox | wellness | half_marathon |
+                                         # triathlon | hypertrophy | all
+tldr: >-
+  <1-3 frases con el aporte central.>
+key_findings:
+  - "<Finding numérico/empírico 1>"
+  - "<Finding 2>"
+training_implications:
+  - "<Bullet 1 — cómo cambia la programación>"
+  - "<Bullet 2>"
+tags:
+  - <tag_libre>
+date_added: YYYY-MM-DD
+---
+
+# <Título>
+
+<Cuerpo libre: notas, citas verbatim, tablas, gráficos, contexto. El
+ coach lo lee solo cuando necesita profundizar más allá del frontmatter.>
+```
+
+### Vocabulario
+
+**`evidence_quality`** (case-insensitive, en orden descendente de peso):
+
+- `meta_analysis` — meta-análisis o systematic review formal.
+- `systematic_review` — alias de `meta_analysis` para revisiones
+  sistemáticas sin pooling cuantitativo.
+- `peer_reviewed` — paper original peer-reviewed.
+- `review` — revisión narrativa no sistemática.
+- `preprint` — preprint sin peer review.
+- `report` — reporte institucional (ej. SSAC).
+- `expert_opinion` — opinión de experto / editorial.
+- `case_study` — n=1 / case report.
+- `n_of_1` — auto-experimento del atleta.
+- `unspecified` — default cuando el campo falta.
+
+**`topics`** (vocabulario sugerido, extensible — el coach matchea
+case-insensitive):
+
+```
+performance, fatigue, recovery, strength, endurance, hypertrophy,
+energy_systems, time_intensity, hybrid_training, female_athlete,
+nutrition, sleep, hydration, hrv, vo2max, lactate, mobility,
+injury_prevention, periodization, mental_skills, data_science,
+acwr, deload, taper, race_strategy
+```
+
+**`profiles_relevant`** debe contener al menos uno de los perfiles
+válidos del repo (`hyrox`, `wellness`, `half_marathon`, `triathlon`,
+`hypertrophy`) o el wildcard `"all"`. Si la lista está vacía, el
+loader la sustituye por `["all"]` (el paper aparece para todos).
+
+### Reglas
+
+- **`id` único.** Es el anchor de markdown en `research_evidence.md`
+  (`#<id>`); si dos archivos tienen el mismo `id`, los links rompen.
+  Default si falta: el filename sin extensión.
+- **Frontmatter opcional, body siempre.** Un `.md` sin `---...---` al
+  inicio igual se incorpora — sólo aparece sin metadata estructurada
+  (defaults razonables). Útil para fuentes ad-hoc, pero perdés filtros
+  por topic / perfil.
+- **Cuerpo libre.** No hay schema sobre el body. Podés pegar el paper
+  entero, citas, o solo notas propias.
+- **`tldr` / `key_findings` / `training_implications` son lo que el
+  coach surface.** Son los bullets que se renderean en
+  `research_evidence.md`. Si los dejás vacíos, el paper aparece como
+  "stub" — el coach no tiene takeaways que citar.
+- **No editar `research_evidence.md` a mano.** Es generado.
+
+### Cargado por
+
+`_session_lib.load_research_papers()` parsea cada `.md`. El frontmatter
+se lee con `yaml.safe_load` después de un regex que separa
+`---\n...\n---\n` del cuerpo. `interpret_research()` agrupa por tema,
+filtra por perfil y ordena por `year` desc. `refresh_research_evidence_md()`
+serializa todo a `research_evidence.md`.
+
+---
+
+## 12. `research_evidence.md` (living doc, generado)
+
+Vista compilada del compendio de research. **No editar a mano** —
+regenerado por `_session_lib.refresh_research_evidence_md()` desde
+todos los `.md` en `data/manual/research/`.
+
+### Secciones fijas
+
+1. **Estado actual** — resumen ejecutivo: total de papers, temas únicos,
+   distribución por calidad de evidencia.
+2. **Top takeaways para el perfil activo** — tabla con todas las
+   `training_implications` de los papers cuyo `profiles_relevant`
+   incluye el perfil activo o `"all"`. Cada fila linkea al card del
+   paper.
+3. **Índice por tema** — cada `topic` con la lista de papers que lo
+   tocan (con tldr).
+4. **Catálogo completo de papers** — un card por paper con metadata
+   completa + tldr + key_findings + training_implications + link al
+   archivo fuente.
+
+### Reglas
+
+- **Anchors** son `<id>` del frontmatter, lowercased + dashes (mismo
+  esquema que GitHub-flavored markdown).
+- **Orden de catálogo:** por `date_added` descendente; ties por `id`.
+- **Orden de tema:** alfabético; dentro de cada tema por `year` desc.
+- **Regeneración no destructiva:** sobrescribe el archivo entero.
+  Cualquier edición manual se pierde.
+
+### Regeneración
+
+```bash
+.venv/bin/python -c "
+import sys; sys.path.insert(0,'scripts')
+from _session_lib import refresh_research_evidence_md
+refresh_research_evidence_md()
+"
+```
+
+Idempotente y rápido (~milisegundos para decenas de papers).
