@@ -398,42 +398,63 @@ from _session_lib import (
 )
 ```
 
-### 0.4.b Leer la data manual del atleta (sangre + antropometría)
+### 0.4.b Leer la data manual del atleta (sangre + antropometría + research)
 
-Además de la data Garmin, el atleta mantiene dos workbooks Excel a mano:
+Además de la data Garmin, el atleta mantiene tres fuentes manuales:
 
 - `data/manual/blood.xlsx` — análisis de sangre (longitudinal, 1 col por extracción).
 - `data/manual/anthropometry.xlsx` — antropometrías (longitudinal, 1 col por eval).
+- `data/manual/research/*.md` — papers / estudios / reportes peer-reviewed
+  con frontmatter YAML. Compendio de evidencia que el coach usa como
+  referencia al planificar y justificar sesiones.
 
-Estos se proyectan a dos **living docs en root** que vos leés como
+Estos se proyectan a tres **living docs en root** que vos leés como
 cualquier otro `.md` del proyecto:
 
 - `blood_panel.md` — estado actual + por categoría + histórico.
 - `body_composition.md` — estado actual + trayectoria headline + por bloque + histórico.
+- `research_evidence.md` — top takeaways del perfil activo + índice por
+  tema + catálogo completo de papers.
 
-**Regla de regeneración:** si el `.xlsx` está más fresco que el `.md`
+**Regla de regeneración:** si una fuente está más fresca que su `.md`
 (o el `.md` no existe), regenerá antes de leer:
 
 ```bash
 .venv/bin/python <<'PY'
 import sys; sys.path.insert(0, 'scripts')
 from _session_lib import (
-    manual_data_is_stale, refresh_blood_panel_md, refresh_body_composition_md,
+    manual_data_is_stale,
+    refresh_blood_panel_md,
+    refresh_body_composition_md,
+    refresh_research_evidence_md,
 )
 stale = manual_data_is_stale()
 if stale['blood']:         refresh_blood_panel_md()
 if stale['anthropometry']: refresh_body_composition_md()
+if stale['research']:      refresh_research_evidence_md()
 print('OK')
 PY
 ```
 
-Después leé `blood_panel.md` (sección "Estado actual") y
-`body_composition.md` (sección "Estado actual" + "Trayectoria
-headline"). Si hay flags duras en cualquiera, mencionalas en el
-resumen del bootstrap junto a las partes del cuerpo abiertas.
+Después leé:
 
-**No edités estos dos `.md` a mano** — se regeneran desde el Excel.
-Para corregir un valor, corregilo en el Excel y regenerá.
+- `blood_panel.md` (sección "Estado actual") — si hay flags duras,
+  mencionalas en el resumen del bootstrap.
+- `body_composition.md` (sección "Estado actual" + "Trayectoria
+  headline") — flags blandas vs targets del perfil.
+- `research_evidence.md` (sección "Top takeaways para el perfil
+  activo") — internalizá los bullets, son tu base de evidencia
+  cuando programes / justifiques sesiones. **No los recites en el
+  bootstrap** (es ruido); citalos solo cuando un takeaway aplica
+  directamente a una decisión de coaching (ej. al proponer un bloque
+  de intervalos, podés referenciar el paper que justifica el time
+  domain elegido).
+
+**No edités ninguno de estos tres `.md` a mano** — se regeneran desde
+sus fuentes. Para corregir un valor de sangre/antropometría, corregilo
+en el `.xlsx` y regenerá. Para agregar un paper nuevo, dropeá un `.md`
+con frontmatter en `data/manual/research/` y regenerá (ver §6.5 para
+la receta completa).
 
 ### 0.5 Cargar el perfil del atleta evolutivo
 
@@ -577,6 +598,18 @@ no puede contradecir éstas.
 5. **Comunicación:** Español rioplatense, concordancia masculina (o lo
    que diga `athlete` en `profile.yml`). Salidas estructuradas según
    el formato definido en el `system_prompt.md` del perfil activo.
+
+6. **Coaching basado en evidencia.** Al diseñar bloques nuevos,
+   justificar cambios de protocolo, o defender la elección de un
+   estímulo (time domain, intensidad, frecuencia), consultá
+   `research_evidence.md` §"Top takeaways para el perfil activo" y los
+   papers indexados por tema. Si una decisión deriva directamente de
+   un paper, citá el `id` y 1 bullet de `training_implications` (ej.
+   *"según `hyrox-ssac-report-2025`, el time domain corto da pico de
+   lactato — por eso hoy van 6×3'"*). Mantener parsimonia: 1-2
+   referencias por sesión max, sin convertir cada plan en
+   bibliografía. La evidencia **complementa** el master plan; no lo
+   reemplaza, ni anula reglas 1-3.
 
 ---
 
@@ -724,9 +757,11 @@ y cómo invocarlo**. Estos son agnósticos al perfil.
 | `executed_volume.md` | Tabla de actividades por semana + RPE por día + Bitácora corporal. | Siempre. |
 | `blood_panel.md` | Interpretación de la última extracción de sangre + trayectoria por marker + flags clínicos. Generado desde `data/manual/blood.xlsx` + `data/manual/blood_reference_ranges.yml`. **No editar a mano.** | En bootstrap si existe. |
 | `body_composition.md` | Interpretación de la última antropometría + trayectoria headline + flags vs targets del perfil. Generado desde `data/manual/anthropometry.xlsx`. **No editar a mano.** | En bootstrap si existe. |
+| `research_evidence.md` | Compendio de papers / estudios peer-reviewed. Top takeaways del perfil activo + índice por tema + catálogo completo. Generado desde `data/manual/research/*.md`. **No editar a mano.** | En bootstrap si existe; consultar al planificar / justificar sesiones. |
 | `data/manual/blood.xlsx` | Fuente de panel sanguíneo — wide format, marcadores en filas, fechas en columnas. Mantenido a mano por el atleta. | Sólo si el `.md` no se generó o está stale. |
 | `data/manual/anthropometry.xlsx` | Fuente de antropometría — wide format, variables en filas, fechas en columnas. Mantenido a mano. | Sólo si el `.md` no se generó o está stale. |
 | `data/manual/blood_reference_ranges.yml` | Rangos lab + targets atleta + reglas de flag por marker. Editable cuando un rango cambia o el médico te da un target distinto. | Lo lee `interpret_blood_panel()` automáticamente — no lo abrís manualmente salvo para editar. |
+| `data/manual/research/*.md` | Fuentes de evidencia — un `.md` por paper / estudio / reporte. YAML frontmatter al tope con metadata + tldr + key_findings + training_implications; cuerpo libre. Mantenido a mano (template en `templates/research_paper.md`). | Cuando necesites profundizar más allá del card en `research_evidence.md`. |
 | `data/<fecha>/wellness.json` | Sleep / HRV / RHR / Body Battery / stress de Garmin. | Hoy + 7 días previos. |
 | `data/<fecha>/activities/*.json` | Resumen Garmin por actividad. | Hoy + 7 días previos. |
 | `data/<fecha>/activities/*.fit` | Raw .fit (parseable con fitparse). | Cuando necesitás zonas / splits / cadencia. |
@@ -930,6 +965,63 @@ for d, v in anthropometry_variable_history('Peso (kg)'):
 PY
 ```
 
+#### Listar todos los papers del compendio de research
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import load_research_papers
+for p in load_research_papers():
+    print(f"  {p['id']:40s}  topics={p['topics'][:3]}…  rel={p['profiles_relevant']}")
+PY
+```
+
+#### Filtrar papers por perfil activo
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import research_papers_for_profile
+for p in research_papers_for_profile():
+    print(f"  {p['id']:40s}  {p['title'][:60]}")
+PY
+```
+
+Devuelve los papers cuyo frontmatter `profiles_relevant` incluye el
+perfil activo (de `profile.yml`) **o** `"all"`. Sin argumento usa el
+perfil del `profile.yml`; pasale `"<otro_perfil>"` para forzar.
+
+#### Filtrar papers por tema
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import research_papers_by_topic
+for p in research_papers_by_topic("vo2max"):
+    print(f"  {p['id']}  {p['title'][:60]}")
+PY
+```
+
+El topic se matchea **case-insensitive** contra la lista
+`topics:` del frontmatter. Vocabulario sugerido en `templates/research_paper.md`.
+
+#### Abrir un paper específico (body completo + frontmatter)
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import find_research_paper
+p = find_research_paper("hyrox-ssac-report-2025")
+if p:
+    print("Title:", p['title'])
+    print("TLDR:", p['tldr'])
+    print("Key findings:")
+    for f in p['key_findings']:
+        print(" -", f)
+    print("\n--- body ---\n", p['body'][:500], "…")
+PY
+```
+
 #### Chequear staleness de los `.md` manuales
 
 ```bash
@@ -939,6 +1031,11 @@ from _session_lib import manual_data_is_stale
 print(manual_data_is_stale())
 PY
 ```
+
+Devuelve `{'blood': bool, 'anthropometry': bool, 'research': bool}`.
+Para research, `True` significa que algún `.md` bajo
+`data/manual/research/` está más fresco que `research_evidence.md`
+(o el living doc no existe).
 
 ### 6.4 Helpers de **escritura** — persistencia desde conversación
 
@@ -1112,6 +1209,34 @@ PY
 
 Mismo patrón. Lee `data/manual/anthropometry.xlsx`, recomputa, reescribe.
 
+#### Regenerar `research_evidence.md` desde los `.md` de research
+
+```bash
+.venv/bin/python <<'PY'
+import sys; sys.path.insert(0, 'scripts')
+from _session_lib import refresh_research_evidence_md
+out = refresh_research_evidence_md()
+print("✅", out)
+PY
+```
+
+Idempotente. Lee todos los `.md` de `data/manual/research/`, parsea
+los frontmatter YAML, agrupa por tema / calidad de evidencia / perfil,
+y reescribe `research_evidence.md` en root. Corré esto:
+
+- Cuando el atleta agrega un paper nuevo (drop de un `.md` en
+  `data/manual/research/`).
+- Cuando el atleta edita el frontmatter de un paper existente (ej.
+  cambia `profiles_relevant` o suma `topics`).
+- Cuando `manual_data_is_stale()['research']` es `True`.
+
+Para crear un paper nuevo desde el template:
+
+```bash
+cp templates/research_paper.md data/manual/research/<slug-en-kebab>.md
+# editá el frontmatter + cuerpo en VS Code, después regenerá
+```
+
 ### 6.5 Recetas de uso (queries comunes)
 
 | Pregunta del atleta | Cómo responderla |
@@ -1131,6 +1256,10 @@ Mismo patrón. Lee `data/manual/anthropometry.xlsx`, recomputa, reescribe.
 | "Subí una antropometría nueva al Excel" | `refresh_body_composition_md()` → resumir cambios vs eval previa (peso, BF%, FFMI, sumatoria pliegues) + flags. |
 | "¿Cómo viene mi peso / BF%?" | Leer §"Estado actual" y §"Trayectoria headline" de `body_composition.md`. |
 | "¿Cómo está mi composición corporal vs mi objetivo Hyrox?" | Leer §"Flags blandas" + headline vars en `body_composition.md` — los targets están parametrizados por perfil. |
+| "Subí un paper nuevo" / "agregue un estudio" | Confirmar que el `.md` está en `data/manual/research/` con frontmatter YAML → `refresh_research_evidence_md()` → leer la nueva entrada en `research_evidence.md` → resumirle al atleta el TL;DR + training implications + si el paper cambia algo en el plan actual. |
+| "¿Qué dice la evidencia sobre `<tema>`?" | `research_papers_by_topic('<tema>')` para listar + abrir `find_research_paper(id)` si querés profundizar en uno. Leer `research_evidence.md` §"Índice por tema" si el atleta quiere ver el catálogo entero. |
+| "¿Por qué proponés `<X>` para hoy?" (justificación basada en evidencia) | Si tu propuesta deriva de un paper, citá el `id` del paper + 1 bullet de `training_implications`. Mantenelo breve — 1-2 referencias por sesión, no convertir cada plan en bibliografía. |
+| "Quiero armar un bloque de `<tipo>`" (ej. VO2max, fondos, fuerza funcional) | Filtrar `research_papers_by_topic('<tipo>')` y `research_papers_for_profile()` → revisar `training_implications` relevantes → diseñar el bloque alineado con la evidencia + parámetros del master plan. |
 
 ### 6.6 Qué NUNCA hacés (universal)
 
@@ -1143,6 +1272,10 @@ Mismo patrón. Lee `data/manual/anthropometry.xlsx`, recomputa, reescribe.
   `refresh_body_composition_md()`. Para cambiar un valor, corregilo en
   `data/manual/<file>.xlsx` y regenerá. Para cambiar un rango o flag,
   editá `data/manual/blood_reference_ranges.yml` y regenerá.
+- **No editás `research_evidence.md` a mano.** Se regenera desde los
+  `.md` de `data/manual/research/` con `refresh_research_evidence_md()`.
+  Para agregar / editar un paper, tocá el `.md` fuente (o copiá
+  `templates/research_paper.md` como nuevo) y regenerá.
 - **No modificás `master_plan.md` inline.** Toda modificación va a
   `plan_adjustments.md`. El master plan se reescribe solo en revisiones
   formales de fase.
