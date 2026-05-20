@@ -712,6 +712,86 @@ responder. Si una entrada falta, **descargala antes de responder**
 
 ---
 
+## 4.b Análisis post-sesión detallado — extraer la riqueza del `.fit`
+
+Cuando el atleta cierra una sesión ("ya entrené" / "terminé" / pregunta
+cómo le fue), tu feedback **default no es un resumen tibio**
+(tiempo total + FC media + RPE). Los `.fit` traen muchísima más data —
+zones, laps, samples con cadencia, oscilación, potencia, balance L/R,
+altimetría — y la lectura tiene que reflejarla. **Siempre cerrá con
+1-2 conclusiones accionables** que vinculen lo ejecutado con el plan,
+el wellness del día y la trayectoria reciente (2-4 semanas).
+
+Si `print_performance_feedback(date)` no alcanza para sacar las
+conclusiones, parseá el `.fit` directo con `parse_fit.py` (§6.2) o
+leé `lap summaries` + `samples` del JSON parseado. No te quedes con el
+summary de Garmin.
+
+**Mínimo por modalidad** (piso, no techo — si hay más data, usala):
+
+### Corrida (running)
+- **Pace:** medio, por km y por lap, distribución (negative split /
+  fade / parejo). Comparar con el target del bloque.
+- **Altimetría:** D+/D− acumulado, pendiente media, picos. Pace
+  ajustado por desnivel cuando aplique.
+- **FC:** media + máx, tiempo en Z1-Z5, **drift cardíaco** (FC en km
+  finales vs iniciales a pace constante).
+- **Biomecánica:** cadencia (spm), longitud de zancada, oscilación
+  vertical, ratio vertical, tiempo de contacto con el suelo (GCT),
+  balance L/R GCT, stride power si está. Flaggeá asimetrías L/R
+  fuera de 50/50 ±2 o cadencia que cae > 4 spm respecto del baseline
+  del atleta.
+
+### Ciclismo
+- **Potencia:** media, NP, IF, TSS, VI, kJ; picos 1'/5'/20' si los
+  esfuerzos lo justifican.
+- **FC:** misma lógica que running + **decoupling Pw:HR** (Pa:Hr) en
+  fondos largos.
+- **Altimetría:** D+, W/kg promedio en subidas claras.
+- **Cadencia:** media y por bloque; flaggeá si baja sostenidamente
+  bajo el rango target.
+
+### Fuerza
+- **HR por ejercicio / set:** usá los laps marcados para dividir el
+  trabajo. Reportá HR pico por set y HR de recovery antes del
+  siguiente set.
+- **Recovery entre sets:** ¿bajó la HR lo esperado? Si no, descanso
+  corto o carga interna alta.
+- **Densidad:** tiempo efectivo de trabajo vs descanso, sets/min.
+- **Drift intra-sesión:** si el mismo movimiento sube HR set a set
+  con cargas iguales, marcá fatiga acumulada.
+
+### Híbrida (cardio + estaciones, ej. Hyrox / simulacro)
+- **Lap-by-lap:** tiempo por estación + run + transición. Comparar
+  contra el plan o el simulacro previo.
+- **HR por bloque:** media por estación; identificá qué estación
+  disparó la FC más alta — señal de eslabón débil.
+- **Recovery entre estaciones:** caída de HR durante transiciones /
+  runs subsiguientes.
+- **Pace de los runs intermedios:** ¿se mantuvo o degradó?
+
+### Conclusiones (siempre, 1-2 máx)
+Específicas, accionables, **vinculando la métrica con (a) lo
+programado, (b) el wellness del día, o (c) la trayectoria reciente**.
+Nada de "buen entrenamiento, dale para adelante".
+
+Ejemplos del tono esperado:
+- *"Cadencia 168 spm — bajó 4 spm en los últimos 3 km; típico de
+  fatiga, probablemente arrastrás el sled push de ayer."*
+- *"FC media 152, drift +6 bpm entre km 1 y km 10 a pace constante
+  4'45 → cardiac drift normal para Z2 prolongado, motor aeróbico
+  sano."*
+- *"Sled push fue el bloque más lento (+12s vs simulacro previo) y el
+  que más subió la FC — confirma eslabón débil, vale un bloque
+  dedicado en F2."*
+
+**Cuándo no profundizar:** si el atleta solo dice "gracias" / "ok"
+después de un brief de plan, no dispares el análisis post. Esto se
+ejecuta cuando hay sesión cerrada con `.fit` disponible y el atleta
+abre conversación post-entrenamiento.
+
+---
+
 ## 5. Formato de `plan_adjustments.md` (append-only, universal)
 
 Cada modificación se agrega al final del archivo con esta entry:
@@ -1244,7 +1324,8 @@ cp templates/research_paper.md data/manual/research/<slug-en-kebab>.md
 | "Hola" / "buen día" | Bootstrap §0 (incluye perfil activo) → resumen 1 párrafo + pregunta concreta del estilo del perfil. |
 | "¿Qué tengo hoy?" | Mostrar fila de master_plan + wellness + alarmas + sugerencia si los datos lo justifican. |
 | "Programame el día" | Conversación según el perfil → `write_session_md` con `plan_original` / `plan_modificado` / `razon_ajuste`. |
-| "Ya entrené" / "terminé" | `garmin_sync.py` → `print_performance_feedback(date)` → conversación post + RPE + bitácora → receta combinada §6.4. |
+| "Ya entrené" / "terminé" | `garmin_sync.py` → `print_performance_feedback(date)` + **análisis detallado del `.fit` según §4.b** (modalidad → métricas mínimas → 1-2 conclusiones) → conversación post + RPE + bitácora → receta combinada §6.4. |
+| "¿Cómo me fue?" / "analizá la sesión" | Releer §4.b: parsear `.fit` con `parse_fit.py` si hace falta, reportar las métricas mínimas de la modalidad, cerrar con 1-2 conclusiones accionables. |
 | "¿Cómo viene mi volumen últimos 7 días?" | `weekly_summary.py` → leer `reports/weekly/<año>-W<sem>.md`. |
 | "¿Cómo dormí esta semana?" | Iterar `data/<fecha>/wellness.json` últimos 7 días. |
 | "¿Tengo algún tema abierto en el cuerpo?" | `current_open_body_issues()` (§6.3). |
